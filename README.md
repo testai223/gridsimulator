@@ -27,11 +27,11 @@ Run the application with:
 ```bash
 python main.py
 ```
-A window opens where buses and lines can be added. Press **Run Load Flow** to perform a calculation and display the bus results.
+A window opens where buses and lines can be added. Press **Run Load Flow** to perform a calculation and display the bus results. The GUI also includes **Run Example Grid** which runs a minimal two-bus example network.
 
 ## Development
 
-The project follows basic PEP8 practices. Tools like `black`, `flake8` and `mypy` can be used for formatting and type checking.
+The project follows basic PEP8 practices. Tools like `black`, `flake8` and `mypy` can be used for formatting and type checking. Automated tests can be run with `pytest`.
 
 ## License
 
