@@ -41,11 +41,11 @@ class GridCalculator:
                 name=str(line_id),
             )
 
-    def run_powerflow(self) -> Any:
-        """Execute a power flow calculation and return results."""
+    def run_powerflow(self) -> pp.pandapowerNet:
+        """Execute a power flow calculation and return the pandapower network."""
         self.build_network()
         pp.runpp(self.net)
-        return self.net.res_bus
+        return self.net
 
 
 def element_tables(net: pp.pandapowerNet) -> str:

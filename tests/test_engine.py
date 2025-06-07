@@ -30,3 +30,10 @@ def test_build_network():
     calc.build_network()
     assert len(calc.net.bus) == 2
     assert len(calc.net.line) == 1
+
+
+def test_run_powerflow():
+    db = setup_simple_db()
+    calc = GridCalculator(db)
+    net = calc.run_powerflow()
+    assert len(net.res_bus) == 2

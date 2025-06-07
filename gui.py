@@ -74,6 +74,28 @@ class GridApp:
             text="Run Example Grid",
             command=self.run_example_grid,
         ).pack()
+
+        # Table for bus voltages
+        bus_columns = ("bus", "vm_pu", "va_degree")
+        self.bus_tree = ttk.Treeview(
+            self.result_frame, columns=bus_columns, show="headings", height=5
+        )
+        self.bus_tree.heading("bus", text="Bus")
+        self.bus_tree.heading("vm_pu", text="V (p.u.)")
+        self.bus_tree.heading("va_degree", text="Angle (deg)")
+        self.bus_tree.pack(fill="both", expand=True, pady=5)
+
+        # Table for line power flows
+        line_columns = ("line", "p_from", "p_to")
+        self.line_tree = ttk.Treeview(
+            self.result_frame, columns=line_columns, show="headings", height=5
+        )
+        self.line_tree.heading("line", text="Line")
+        self.line_tree.heading("p_from", text="P from (MW)")
+        self.line_tree.heading("p_to", text="P to (MW)")
+        self.line_tree.pack(fill="both", expand=True, pady=5)
+
+        # Raw text output for debugging
         self.text = tk.Text(self.result_frame, height=10, width=50)
         self.text.pack(fill="both", expand=True)
 
@@ -101,12 +123,11 @@ class GridApp:
     def run_powerflow(self) -> None:
         calc = GridCalculator(self.db)
         try:
-            res_bus = calc.run_powerflow()
+            net = calc.run_powerflow()
         except Exception as exc:  # broad except to show message
             messagebox.showerror("Error", str(exc))
             return
-        self.text.delete("1.0", tk.END)
-        self.text.insert(tk.END, str(res_bus))
+        self._display_results(net)
 
     def run_example_grid(self) -> None:
         try:
@@ -115,8 +136,35 @@ class GridApp:
         except Exception as exc:  # broad except to show message
             messagebox.showerror("Error", str(exc))
             return
+        self._display_results(net)
+
+    def _display_results(self, net: pp.pandapowerNet) -> None:
+        """Show calculation results in the GUI tables and text box."""
         self.text.delete("1.0", tk.END)
         self.text.insert(tk.END, str(net.res_bus))
+
+        for item in self.bus_tree.get_children():
+            self.bus_tree.delete(item)
+        for idx, row in net.res_bus.iterrows():
+            self.bus_tree.insert(
+                "",
+                "end",
+                values=(idx, round(row["vm_pu"], 3), round(row["va_degree"], 3)),
+            )
+
+        for item in self.line_tree.get_children():
+            self.line_tree.delete(item)
+        if len(net.res_line) > 0:
+            for idx, row in net.res_line.iterrows():
+                self.line_tree.insert(
+                    "",
+                    "end",
+                    values=(
+                        idx,
+                        round(row["p_from_mw"], 3),
+                        round(row["p_to_mw"], 3),
+                    ),
+                )
 
 
 def main() -> None:
