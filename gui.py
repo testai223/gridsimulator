@@ -6,6 +6,9 @@ from tkinter import messagebox
 
 from database import GridDatabase
 from engine import GridCalculator
+from examples import create_example_grid
+
+import pandapower as pp
 
 
 class GridApp:
@@ -66,6 +69,11 @@ class GridApp:
         ttk.Button(
             self.result_frame, text="Run Load Flow", command=self.run_powerflow
         ).pack()
+        ttk.Button(
+            self.result_frame,
+            text="Run Example Grid",
+            command=self.run_example_grid,
+        ).pack()
         self.text = tk.Text(self.result_frame, height=10, width=50)
         self.text.pack(fill="both", expand=True)
 
@@ -99,6 +107,16 @@ class GridApp:
             return
         self.text.delete("1.0", tk.END)
         self.text.insert(tk.END, str(res_bus))
+
+    def run_example_grid(self) -> None:
+        try:
+            net = create_example_grid()
+            pp.runpp(net)
+        except Exception as exc:  # broad except to show message
+            messagebox.showerror("Error", str(exc))
+            return
+        self.text.delete("1.0", tk.END)
+        self.text.insert(tk.END, str(net.res_bus))
 
 
 def main() -> None:
