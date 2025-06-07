@@ -1,5 +1,6 @@
 """Grid calculation engine using pandapower."""
 
+from typing import Any, List
 
 import pandapower as pp
 
@@ -45,3 +46,30 @@ class GridCalculator:
         self.build_network()
         pp.runpp(self.net)
         return self.net
+
+
+def element_tables(net: pp.pandapowerNet) -> str:
+    """Return formatted tables of common grid elements in *net*.
+
+    Elements include lines, transformers, generators, static generators,
+    loads and external grids. Only non-empty tables are included in the
+    returned string.
+    """
+
+    element_map = {
+        "Lines": "line",
+        "Transformers": "trafo",
+        "Generators": "gen",
+        "Static Generators": "sgen",
+        "Loads": "load",
+        "External Grids": "ext_grid",
+    }
+
+    tables: List[str] = []
+    for title, attr in element_map.items():
+        df = getattr(net, attr, None)
+        if df is not None and not df.empty:
+            tables.append(f"{title}\n{df.to_string()}\n")
+
+    return "\n".join(tables)
+
