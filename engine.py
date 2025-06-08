@@ -44,6 +44,8 @@ class GridCalculator:
     def run_powerflow(self) -> pp.pandapowerNet:
         """Execute a power flow calculation and return the pandapower network."""
         self.build_network()
+        if self.net.ext_grid.empty and not self.net.bus.empty:
+            pp.create_ext_grid(self.net, bus=self.net.bus.index[0], vm_pu=1.0)
         pp.runpp(self.net)
         return self.net
 
@@ -72,4 +74,25 @@ def element_tables(net: pp.pandapowerNet) -> str:
             tables.append(f"{title}\n{df.to_string()}\n")
 
     return "\n".join(tables)
+
+
+def grid_graph(net: pp.pandapowerNet):
+    """Return a NetworkX graph representation of *net* including results."""
+    import networkx as nx
+
+    g = nx.Graph()
+    for idx, row in net.bus.iterrows():
+        attrs = {"name": row.get("name", str(idx))}
+        if hasattr(net, "res_bus") and idx in net.res_bus.index:
+            attrs["vm_pu"] = float(net.res_bus.loc[idx, "vm_pu"])
+        g.add_node(int(idx), **attrs)
+
+    for idx, row in net.line.iterrows():
+        attrs = {"id": int(idx)}
+        if hasattr(net, "res_line") and idx in net.res_line.index:
+            attrs["p_from_mw"] = float(net.res_line.loc[idx, "p_from_mw"])
+            attrs["p_to_mw"] = float(net.res_line.loc[idx, "p_to_mw"])
+        g.add_edge(int(row["from_bus"]), int(row["to_bus"]), **attrs)
+
+    return g
 
