@@ -77,7 +77,7 @@ def element_tables(net: pp.pandapowerNet) -> str:
 
 
 def grid_graph(net: pp.pandapowerNet):
-    """Return a NetworkX graph representation of *net* including results."""
+    """Return a NetworkX graph representation of the buses and lines in *net*."""
     import networkx as nx
 
     g = nx.Graph()

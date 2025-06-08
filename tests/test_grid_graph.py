@@ -11,7 +11,6 @@ def test_grid_graph_nodes_and_edges():
     assert g.number_of_nodes() == len(net.bus)
     assert g.number_of_edges() == len(net.line)
 
-
 def test_grid_graph_includes_results():
     net = create_example_grid()
     pp.runpp(net)
