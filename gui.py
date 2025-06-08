@@ -138,6 +138,60 @@ class GridApp:
         
         self.line_tree.pack(fill="both", expand=True, pady=5)
 
+        # Table for transformer power flows
+        trafo_columns = ("trafo", "name", "hv_bus", "lv_bus", "p_hv_mw", "q_hv_mvar", "p_lv_mw", "q_lv_mvar", "loading_percent")
+        self.trafo_tree = ttk.Treeview(
+            self.result_frame, columns=trafo_columns, show="headings", height=8
+        )
+        self.trafo_tree.heading("trafo", text="Trafo ID")
+        self.trafo_tree.heading("name", text="Name")
+        self.trafo_tree.heading("hv_bus", text="HV Bus")
+        self.trafo_tree.heading("lv_bus", text="LV Bus")
+        self.trafo_tree.heading("p_hv_mw", text="P HV (MW)")
+        self.trafo_tree.heading("q_hv_mvar", text="Q HV (Mvar)")
+        self.trafo_tree.heading("p_lv_mw", text="P LV (MW)")
+        self.trafo_tree.heading("q_lv_mvar", text="Q LV (Mvar)")
+        self.trafo_tree.heading("loading_percent", text="Loading (%)")
+        
+        # Configure column widths and alignment
+        self.trafo_tree.column("trafo", width=60, anchor="center")
+        self.trafo_tree.column("name", width=80, anchor="w")
+        self.trafo_tree.column("hv_bus", width=60, anchor="center")
+        self.trafo_tree.column("lv_bus", width=60, anchor="center")
+        self.trafo_tree.column("p_hv_mw", width=90, anchor="e")
+        self.trafo_tree.column("q_hv_mvar", width=90, anchor="e")
+        self.trafo_tree.column("p_lv_mw", width=90, anchor="e")
+        self.trafo_tree.column("q_lv_mvar", width=90, anchor="e")
+        self.trafo_tree.column("loading_percent", width=90, anchor="e")
+        
+        self.trafo_tree.pack(fill="both", expand=True, pady=5)
+
+        # Table for generator results
+        gen_columns = ("gen", "name", "bus", "p_mw", "q_mvar", "vm_pu", "va_degree", "slack")
+        self.gen_tree = ttk.Treeview(
+            self.result_frame, columns=gen_columns, show="headings", height=8
+        )
+        self.gen_tree.heading("gen", text="Gen ID")
+        self.gen_tree.heading("name", text="Name")
+        self.gen_tree.heading("bus", text="Bus")
+        self.gen_tree.heading("p_mw", text="P (MW)")
+        self.gen_tree.heading("q_mvar", text="Q (Mvar)")
+        self.gen_tree.heading("vm_pu", text="V (p.u.)")
+        self.gen_tree.heading("va_degree", text="Angle (°)")
+        self.gen_tree.heading("slack", text="Slack")
+        
+        # Configure column widths and alignment
+        self.gen_tree.column("gen", width=60, anchor="center")
+        self.gen_tree.column("name", width=100, anchor="w")
+        self.gen_tree.column("bus", width=60, anchor="center")
+        self.gen_tree.column("p_mw", width=80, anchor="e")
+        self.gen_tree.column("q_mvar", width=80, anchor="e")
+        self.gen_tree.column("vm_pu", width=80, anchor="e")
+        self.gen_tree.column("va_degree", width=80, anchor="e")
+        self.gen_tree.column("slack", width=60, anchor="center")
+        
+        self.gen_tree.pack(fill="both", expand=True, pady=5)
+
         # Raw text output for debugging
         self.text = tk.Text(self.result_frame, height=10, width=50)
         self.text.pack(fill="both", expand=True)
@@ -261,31 +315,122 @@ class GridApp:
                     print(f"Error displaying line {idx}: {e}")
                     continue
 
+        # Clear and populate transformer results table
+        for item in self.trafo_tree.get_children():
+            self.trafo_tree.delete(item)
+            
+        if hasattr(net, 'res_trafo') and not net.res_trafo.empty:
+            for idx, row in net.res_trafo.iterrows():
+                try:
+                    # Get transformer input data
+                    if idx in net.trafo.index:
+                        trafo_data = net.trafo.loc[idx]
+                        trafo_name = trafo_data.get("name", f"Trafo {idx}")
+                        hv_bus = int(trafo_data["hv_bus"])
+                        lv_bus = int(trafo_data["lv_bus"])
+                    else:
+                        trafo_name = f"Trafo {idx}"
+                        hv_bus = 0
+                        lv_bus = 0
+                    
+                    # Get result data with safe access
+                    p_hv_mw = round(float(row.get("p_hv_mw", 0.0)), 3)
+                    q_hv_mvar = round(float(row.get("q_hv_mvar", 0.0)), 3)
+                    p_lv_mw = round(float(row.get("p_lv_mw", 0.0)), 3)
+                    q_lv_mvar = round(float(row.get("q_lv_mvar", 0.0)), 3)
+                    loading_percent = round(float(row.get("loading_percent", 0.0)), 1)
+                    
+                    self.trafo_tree.insert(
+                        "",
+                        "end",
+                        values=(idx, trafo_name, hv_bus, lv_bus, p_hv_mw, q_hv_mvar, p_lv_mw, q_lv_mvar, loading_percent),
+                    )
+                except Exception as e:
+                    print(f"Error displaying transformer {idx}: {e}")
+                    continue
+
+        # Clear and populate generator results table
+        for item in self.gen_tree.get_children():
+            self.gen_tree.delete(item)
+            
+        if hasattr(net, 'res_gen') and not net.res_gen.empty:
+            for idx, row in net.res_gen.iterrows():
+                try:
+                    # Get generator input data
+                    if idx in net.gen.index:
+                        gen_data = net.gen.loc[idx]
+                        gen_name = gen_data.get("name", f"Gen {idx}")
+                        bus = int(gen_data["bus"])
+                        is_slack = gen_data.get("slack", False)
+                        slack_text = "Yes" if is_slack else "No"
+                    else:
+                        gen_name = f"Gen {idx}"
+                        bus = 0
+                        slack_text = "No"
+                    
+                    # Get result data with safe access
+                    p_mw = round(float(row.get("p_mw", 0.0)), 3)
+                    q_mvar = round(float(row.get("q_mvar", 0.0)), 3)
+                    vm_pu = round(float(row.get("vm_pu", 0.0)), 3)
+                    va_degree = round(float(row.get("va_degree", 0.0)), 1)
+                    
+                    self.gen_tree.insert(
+                        "",
+                        "end",
+                        values=(idx, gen_name, bus, p_mw, q_mvar, vm_pu, va_degree, slack_text),
+                    )
+                except Exception as e:
+                    print(f"Error displaying generator {idx}: {e}")
+                    continue
+
     def show_graph(self) -> None:
         """Display the current network as a graph using matplotlib."""
         if self.current_net is None:
             messagebox.showinfo("Info", "Run a load flow first")
             return
+        
         g = grid_graph(self.current_net)
-        pos = nx.spring_layout(g)
-        plt.figure()
-        nx.draw(g, pos, with_labels=False, node_color="#A0CBE2")
+        pos = nx.spring_layout(g, seed=42)  # Fixed seed for consistent layout
+        
+        plt.figure(figsize=(12, 8))
+        
+        # Separate edges by type
+        line_edges = [(u, v) for u, v, d in g.edges(data=True) if d.get("type") == "line"]
+        transformer_edges = [(u, v) for u, v, d in g.edges(data=True) if d.get("type") == "transformer"]
+        
+        # Draw nodes
+        nx.draw_networkx_nodes(g, pos, node_color="#A0CBE2", node_size=800)
+        
+        # Draw edges with different styles
+        if line_edges:
+            nx.draw_networkx_edges(g, pos, edgelist=line_edges, edge_color="black", width=2)
+        if transformer_edges:
+            nx.draw_networkx_edges(g, pos, edgelist=transformer_edges, edge_color="red", width=3, style="dashed")
 
+        # Node labels with voltage information
         node_labels = {}
         for n, data in g.nodes(data=True):
-            label = str(n)
+            name = data.get("name", f"Bus {n}")
+            label = f"{name}\n({n})"
             if "vm_pu" in data:
-                label += f"\n{data['vm_pu']:.2f} pu"
+                label += f"\n{data['vm_pu']:.3f} pu"
             node_labels[n] = label
-        nx.draw_networkx_labels(g, pos, labels=node_labels)
+        nx.draw_networkx_labels(g, pos, labels=node_labels, font_size=8)
 
+        # Edge labels with power flow information
         edge_labels = {}
         for u, v, data in g.edges(data=True):
-            if "p_from_mw" in data:
-                edge_labels[(u, v)] = f"{data['p_from_mw']:.2f} MW"
+            if data.get("type") == "line" and "p_from_mw" in data:
+                edge_labels[(u, v)] = f"{data['p_from_mw']:.1f} MW"
+            elif data.get("type") == "transformer" and "p_hv_mw" in data:
+                edge_labels[(u, v)] = f"{data['p_hv_mw']:.1f} MW"
+        
         if edge_labels:
-            nx.draw_networkx_edge_labels(g, pos, edge_labels=edge_labels)
+            nx.draw_networkx_edge_labels(g, pos, edge_labels=edge_labels, font_size=7)
 
+        plt.title("Power System Network Graph\n(Solid lines: Transmission Lines, Dashed red: Transformers)")
+        plt.axis('off')
+        plt.tight_layout()
         plt.show()
 
 
