@@ -1,2 +1,4 @@
 pandapower
 pandas
+networkx
+matplotlib
