@@ -183,7 +183,23 @@ class GridApp:
         g = grid_graph(self.current_net)
         pos = nx.spring_layout(g)
         plt.figure()
-        nx.draw(g, pos, with_labels=True, node_color="#A0CBE2")
+        nx.draw(g, pos, with_labels=False, node_color="#A0CBE2")
+
+        node_labels = {}
+        for n, data in g.nodes(data=True):
+            label = str(n)
+            if "vm_pu" in data:
+                label += f"\n{data['vm_pu']:.2f} pu"
+            node_labels[n] = label
+        nx.draw_networkx_labels(g, pos, labels=node_labels)
+
+        edge_labels = {}
+        for u, v, data in g.edges(data=True):
+            if "p_from_mw" in data:
+                edge_labels[(u, v)] = f"{data['p_from_mw']:.2f} MW"
+        if edge_labels:
+            nx.draw_networkx_edge_labels(g, pos, edge_labels=edge_labels)
+
         plt.show()
 
 

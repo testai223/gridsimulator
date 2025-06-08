@@ -82,8 +82,17 @@ def grid_graph(net: pp.pandapowerNet):
 
     g = nx.Graph()
     for idx, row in net.bus.iterrows():
-        g.add_node(int(idx), name=row.get("name", str(idx)))
+        attrs = {"name": row.get("name", str(idx))}
+        if hasattr(net, "res_bus") and idx in net.res_bus.index:
+            attrs["vm_pu"] = float(net.res_bus.loc[idx, "vm_pu"])
+        g.add_node(int(idx), **attrs)
+
     for idx, row in net.line.iterrows():
-        g.add_edge(int(row["from_bus"]), int(row["to_bus"]), id=int(idx))
+        attrs = {"id": int(idx)}
+        if hasattr(net, "res_line") and idx in net.res_line.index:
+            attrs["p_from_mw"] = float(net.res_line.loc[idx, "p_from_mw"])
+            attrs["p_to_mw"] = float(net.res_line.loc[idx, "p_to_mw"])
+        g.add_edge(int(row["from_bus"]), int(row["to_bus"]), **attrs)
+
     return g
 

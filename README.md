@@ -8,7 +8,7 @@ A simple framework to create power grid models, store them in a database and run
 - Load-flow calculation engine based on pandapower
 - Tkinter GUI to add grid elements and run power flow
 - Convert calculated networks to NetworkX graphs
-- Visualize the grid graph from the GUI
+- Visualize the grid graph from the GUI with bus voltages and line flows
 - Minimal, single-file entry point (`main.py`)
 
 ## Installation
