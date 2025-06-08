@@ -8,7 +8,7 @@ from database import GridDatabase
 from engine import GridCalculator, grid_graph, element_tables
 import networkx as nx
 import matplotlib.pyplot as plt
-from examples import create_example_grid, create_ieee_9_bus
+from examples import create_example_grid, create_ieee_9_bus, create_ieee_39_bus
 
 import pandapower as pp
 
@@ -30,10 +30,12 @@ class GridApp:
 
         self.bus_frame = ttk.Frame(notebook)
         self.line_frame = ttk.Frame(notebook)
+        self.edit_frame = ttk.Frame(notebook)
         self.result_frame = ttk.Frame(notebook)
 
         notebook.add(self.bus_frame, text="Buses")
         notebook.add(self.line_frame, text="Lines")
+        notebook.add(self.edit_frame, text="Edit Network")
         notebook.add(self.result_frame, text="Results")
 
         # Bus inputs
@@ -69,6 +71,9 @@ class GridApp:
             row=len(labels), column=0, columnspan=2
         )
 
+        # Edit Network tab - Editable tables for network parameters
+        self._build_edit_widgets()
+
         ttk.Button(
             self.result_frame, text="Run Load Flow", command=self.run_powerflow
         ).pack()
@@ -81,6 +86,11 @@ class GridApp:
             self.result_frame,
             text="Run IEEE 9-Bus",
             command=self.run_ieee_9_bus,
+        ).pack()
+        ttk.Button(
+            self.result_frame,
+            text="Run IEEE 39-Bus",
+            command=self.run_ieee_39_bus,
         ).pack()
         ttk.Button(
             self.result_frame,
@@ -196,6 +206,112 @@ class GridApp:
         self.text = tk.Text(self.result_frame, height=10, width=50)
         self.text.pack(fill="both", expand=True)
 
+    def _build_edit_widgets(self) -> None:
+        """Build the editable network parameter tables."""
+        # Create a notebook for different element types
+        edit_notebook = ttk.Notebook(self.edit_frame)
+        edit_notebook.pack(fill="both", expand=True)
+
+        # Create frames for each element type
+        self.edit_bus_frame = ttk.Frame(edit_notebook)
+        self.edit_line_frame = ttk.Frame(edit_notebook)
+        self.edit_gen_frame = ttk.Frame(edit_notebook)
+        self.edit_load_frame = ttk.Frame(edit_notebook)
+
+        edit_notebook.add(self.edit_bus_frame, text="Bus Data")
+        edit_notebook.add(self.edit_line_frame, text="Line Data")
+        edit_notebook.add(self.edit_gen_frame, text="Generator Data")
+        edit_notebook.add(self.edit_load_frame, text="Load Data")
+
+        # Editable Bus Parameters Table
+        bus_edit_columns = ("bus", "name", "vn_kv")
+        self.edit_bus_tree = ttk.Treeview(
+            self.edit_bus_frame, columns=bus_edit_columns, show="headings", height=12
+        )
+        self.edit_bus_tree.heading("bus", text="Bus ID")
+        self.edit_bus_tree.heading("name", text="Name")
+        self.edit_bus_tree.heading("vn_kv", text="Vn (kV)")
+        
+        self.edit_bus_tree.column("bus", width=80, anchor="center")
+        self.edit_bus_tree.column("name", width=150, anchor="w")
+        self.edit_bus_tree.column("vn_kv", width=100, anchor="e")
+        
+        self.edit_bus_tree.pack(fill="both", expand=True, pady=5)
+        self.edit_bus_tree.bind("<Double-1>", self._on_bus_double_click)
+
+        # Editable Line Parameters Table
+        line_edit_columns = ("line", "from_bus", "to_bus", "r_ohm_per_km", "x_ohm_per_km", "c_nf_per_km", "max_i_ka")
+        self.edit_line_tree = ttk.Treeview(
+            self.edit_line_frame, columns=line_edit_columns, show="headings", height=12
+        )
+        self.edit_line_tree.heading("line", text="Line ID")
+        self.edit_line_tree.heading("from_bus", text="From Bus")
+        self.edit_line_tree.heading("to_bus", text="To Bus")
+        self.edit_line_tree.heading("r_ohm_per_km", text="R (Ω/km)")
+        self.edit_line_tree.heading("x_ohm_per_km", text="X (Ω/km)")
+        self.edit_line_tree.heading("c_nf_per_km", text="C (nF/km)")
+        self.edit_line_tree.heading("max_i_ka", text="Max I (kA)")
+        
+        self.edit_line_tree.column("line", width=70, anchor="center")
+        self.edit_line_tree.column("from_bus", width=80, anchor="center")
+        self.edit_line_tree.column("to_bus", width=80, anchor="center")
+        self.edit_line_tree.column("r_ohm_per_km", width=100, anchor="e")
+        self.edit_line_tree.column("x_ohm_per_km", width=100, anchor="e")
+        self.edit_line_tree.column("c_nf_per_km", width=100, anchor="e")
+        self.edit_line_tree.column("max_i_ka", width=100, anchor="e")
+        
+        self.edit_line_tree.pack(fill="both", expand=True, pady=5)
+        self.edit_line_tree.bind("<Double-1>", self._on_line_double_click)
+
+        # Editable Generator Parameters Table
+        gen_edit_columns = ("gen", "name", "bus", "p_mw", "vm_pu", "slack")
+        self.edit_gen_tree = ttk.Treeview(
+            self.edit_gen_frame, columns=gen_edit_columns, show="headings", height=12
+        )
+        self.edit_gen_tree.heading("gen", text="Gen ID")
+        self.edit_gen_tree.heading("name", text="Name")
+        self.edit_gen_tree.heading("bus", text="Bus")
+        self.edit_gen_tree.heading("p_mw", text="P (MW)")
+        self.edit_gen_tree.heading("vm_pu", text="V (p.u.)")
+        self.edit_gen_tree.heading("slack", text="Slack")
+        
+        self.edit_gen_tree.column("gen", width=70, anchor="center")
+        self.edit_gen_tree.column("name", width=120, anchor="w")
+        self.edit_gen_tree.column("bus", width=70, anchor="center")
+        self.edit_gen_tree.column("p_mw", width=100, anchor="e")
+        self.edit_gen_tree.column("vm_pu", width=100, anchor="e")
+        self.edit_gen_tree.column("slack", width=70, anchor="center")
+        
+        self.edit_gen_tree.pack(fill="both", expand=True, pady=5)
+        self.edit_gen_tree.bind("<Double-1>", self._on_gen_double_click)
+
+        # Editable Load Parameters Table
+        load_edit_columns = ("load", "name", "bus", "p_mw", "q_mvar")
+        self.edit_load_tree = ttk.Treeview(
+            self.edit_load_frame, columns=load_edit_columns, show="headings", height=12
+        )
+        self.edit_load_tree.heading("load", text="Load ID")
+        self.edit_load_tree.heading("name", text="Name")
+        self.edit_load_tree.heading("bus", text="Bus")
+        self.edit_load_tree.heading("p_mw", text="P (MW)")
+        self.edit_load_tree.heading("q_mvar", text="Q (Mvar)")
+        
+        self.edit_load_tree.column("load", width=70, anchor="center")
+        self.edit_load_tree.column("name", width=120, anchor="w")
+        self.edit_load_tree.column("bus", width=70, anchor="center")
+        self.edit_load_tree.column("p_mw", width=100, anchor="e")
+        self.edit_load_tree.column("q_mvar", width=100, anchor="e")
+        
+        self.edit_load_tree.pack(fill="both", expand=True, pady=5)
+        self.edit_load_tree.bind("<Double-1>", self._on_load_double_click)
+
+        # Control buttons
+        control_frame = ttk.Frame(self.edit_frame)
+        control_frame.pack(fill="x", pady=5)
+        
+        ttk.Button(control_frame, text="Refresh Tables", command=self._refresh_edit_tables).pack(side=tk.LEFT, padx=5)
+        ttk.Button(control_frame, text="Apply Changes & Run", command=self._apply_changes_and_run).pack(side=tk.LEFT, padx=5)
+
     def add_bus(self) -> None:
         name = self.bus_name.get()
         try:
@@ -234,10 +350,21 @@ class GridApp:
             messagebox.showerror("Error", str(exc))
             return
         self._display_results(net)
+        self._refresh_edit_tables()
 
     def run_ieee_9_bus(self) -> None:
         try:
             net = create_ieee_9_bus()
+            pp.runpp(net)
+        except Exception as exc:  # broad except to show message
+            messagebox.showerror("Error", str(exc))
+            return
+        self._display_results(net)
+        self._refresh_edit_tables()
+
+    def run_ieee_39_bus(self) -> None:
+        try:
+            net = create_ieee_39_bus()
             pp.runpp(net)
         except Exception as exc:  # broad except to show message
             messagebox.showerror("Error", str(exc))
@@ -432,6 +559,214 @@ class GridApp:
         plt.axis('off')
         plt.tight_layout()
         plt.show()
+
+    def _refresh_edit_tables(self) -> None:
+        """Refresh all editing tables with current network data."""
+        if self.current_net is None:
+            messagebox.showinfo("Info", "Load a network first")
+            return
+        
+        net = self.current_net
+        
+        # Clear all editing tables
+        for item in self.edit_bus_tree.get_children():
+            self.edit_bus_tree.delete(item)
+        for item in self.edit_line_tree.get_children():
+            self.edit_line_tree.delete(item)
+        for item in self.edit_gen_tree.get_children():
+            self.edit_gen_tree.delete(item)
+        for item in self.edit_load_tree.get_children():
+            self.edit_load_tree.delete(item)
+        
+        # Populate bus editing table
+        for idx, row in net.bus.iterrows():
+            name = row.get("name", f"Bus {idx}")
+            vn_kv = row["vn_kv"]
+            self.edit_bus_tree.insert("", "end", values=(idx, name, vn_kv))
+        
+        # Populate line editing table
+        for idx, row in net.line.iterrows():
+            from_bus = row["from_bus"]
+            to_bus = row["to_bus"]
+            r_ohm_per_km = row.get("r_ohm_per_km", 0.0)
+            x_ohm_per_km = row.get("x_ohm_per_km", 0.0)
+            c_nf_per_km = row.get("c_nf_per_km", 0.0)
+            max_i_ka = row.get("max_i_ka", 0.0)
+            self.edit_line_tree.insert("", "end", values=(idx, from_bus, to_bus, r_ohm_per_km, x_ohm_per_km, c_nf_per_km, max_i_ka))
+        
+        # Populate generator editing table
+        if hasattr(net, 'gen') and not net.gen.empty:
+            for idx, row in net.gen.iterrows():
+                name = row.get("name", f"Gen {idx}")
+                bus = row["bus"]
+                p_mw = row["p_mw"]
+                vm_pu = row["vm_pu"]
+                slack = "Yes" if row.get("slack", False) else "No"
+                self.edit_gen_tree.insert("", "end", values=(idx, name, bus, p_mw, vm_pu, slack))
+        
+        # Populate load editing table
+        if hasattr(net, 'load') and not net.load.empty:
+            for idx, row in net.load.iterrows():
+                name = row.get("name", f"Load {idx}")
+                bus = row["bus"]
+                p_mw = row["p_mw"]
+                q_mvar = row["q_mvar"]
+                self.edit_load_tree.insert("", "end", values=(idx, name, bus, p_mw, q_mvar))
+
+    def _on_bus_double_click(self, event):
+        """Handle double-click on bus table for editing."""
+        item = self.edit_bus_tree.selection()[0]
+        self._edit_cell(self.edit_bus_tree, item, event)
+
+    def _on_line_double_click(self, event):
+        """Handle double-click on line table for editing."""
+        item = self.edit_line_tree.selection()[0]
+        self._edit_cell(self.edit_line_tree, item, event)
+
+    def _on_gen_double_click(self, event):
+        """Handle double-click on generator table for editing."""
+        item = self.edit_gen_tree.selection()[0]
+        self._edit_cell(self.edit_gen_tree, item, event)
+
+    def _on_load_double_click(self, event):
+        """Handle double-click on load table for editing."""
+        item = self.edit_load_tree.selection()[0]
+        self._edit_cell(self.edit_load_tree, item, event)
+
+    def _edit_cell(self, tree, item, event):
+        """Generic cell editing function."""
+        # Determine which column was clicked
+        column = tree.identify_column(event.x)
+        column_index = int(column[1:]) - 1  # Convert #1, #2, etc. to 0, 1, etc.
+        
+        # Skip editing for ID columns (usually the first column)
+        if column_index == 0:
+            return
+        
+        # Get current values
+        values = list(tree.item(item, "values"))
+        column_name = tree["columns"][column_index]
+        current_value = values[column_index]
+        
+        # Create edit dialog
+        self._show_edit_dialog(tree, item, column_name, current_value, column_index)
+
+    def _show_edit_dialog(self, tree, item, column_name, current_value, column_index):
+        """Show dialog for editing a cell value."""
+        dialog = tk.Toplevel(self.root)
+        dialog.title(f"Edit {column_name}")
+        dialog.geometry("300x150")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        # Center the dialog
+        dialog.update_idletasks()
+        x = (dialog.winfo_screenwidth() // 2) - (300 // 2)
+        y = (dialog.winfo_screenheight() // 2) - (150 // 2)
+        dialog.geometry(f"300x150+{x}+{y}")
+        
+        ttk.Label(dialog, text=f"Edit {column_name}:").pack(pady=10)
+        
+        # Special handling for slack column (Yes/No dropdown)
+        if column_name == "slack":
+            var = tk.StringVar(value=current_value)
+            combo = ttk.Combobox(dialog, textvariable=var, values=["Yes", "No"], state="readonly")
+            combo.pack(pady=5)
+            entry_widget = combo
+        else:
+            var = tk.StringVar(value=str(current_value))
+            entry_widget = ttk.Entry(dialog, textvariable=var)
+            entry_widget.pack(pady=5)
+        
+        def save_value():
+            try:
+                new_value = var.get()
+                # Update the tree display
+                values = list(tree.item(item, "values"))
+                values[column_index] = new_value
+                tree.item(item, values=values)
+                dialog.destroy()
+            except Exception as e:
+                messagebox.showerror("Error", f"Invalid value: {e}")
+        
+        def cancel():
+            dialog.destroy()
+        
+        button_frame = ttk.Frame(dialog)
+        button_frame.pack(pady=10)
+        ttk.Button(button_frame, text="Save", command=save_value).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Cancel", command=cancel).pack(side=tk.LEFT, padx=5)
+        
+        entry_widget.focus()
+        if hasattr(entry_widget, 'select_range'):
+            entry_widget.select_range(0, tk.END)
+
+    def _apply_changes_and_run(self):
+        """Apply all changes from editing tables to the network and run power flow."""
+        if self.current_net is None:
+            messagebox.showinfo("Info", "Load a network first")
+            return
+        
+        try:
+            # Apply bus changes
+            for item in self.edit_bus_tree.get_children():
+                values = self.edit_bus_tree.item(item, "values")
+                bus_id, name, vn_kv = values
+                bus_id = int(bus_id)
+                vn_kv = float(vn_kv)
+                
+                if bus_id in self.current_net.bus.index:
+                    self.current_net.bus.loc[bus_id, "name"] = name
+                    self.current_net.bus.loc[bus_id, "vn_kv"] = vn_kv
+            
+            # Apply line changes
+            for item in self.edit_line_tree.get_children():
+                values = self.edit_line_tree.item(item, "values")
+                line_id, from_bus, to_bus, r_ohm_per_km, x_ohm_per_km, c_nf_per_km, max_i_ka = values
+                line_id = int(line_id)
+                
+                if line_id in self.current_net.line.index:
+                    self.current_net.line.loc[line_id, "from_bus"] = int(from_bus)
+                    self.current_net.line.loc[line_id, "to_bus"] = int(to_bus)
+                    self.current_net.line.loc[line_id, "r_ohm_per_km"] = float(r_ohm_per_km)
+                    self.current_net.line.loc[line_id, "x_ohm_per_km"] = float(x_ohm_per_km)
+                    self.current_net.line.loc[line_id, "c_nf_per_km"] = float(c_nf_per_km)
+                    self.current_net.line.loc[line_id, "max_i_ka"] = float(max_i_ka)
+            
+            # Apply generator changes
+            if hasattr(self.current_net, 'gen'):
+                for item in self.edit_gen_tree.get_children():
+                    values = self.edit_gen_tree.item(item, "values")
+                    gen_id, name, bus, p_mw, vm_pu, slack = values
+                    gen_id = int(gen_id)
+                    
+                    if gen_id in self.current_net.gen.index:
+                        self.current_net.gen.loc[gen_id, "name"] = name
+                        self.current_net.gen.loc[gen_id, "bus"] = int(bus)
+                        self.current_net.gen.loc[gen_id, "p_mw"] = float(p_mw)
+                        self.current_net.gen.loc[gen_id, "vm_pu"] = float(vm_pu)
+                        self.current_net.gen.loc[gen_id, "slack"] = (slack == "Yes")
+            
+            # Apply load changes
+            if hasattr(self.current_net, 'load'):
+                for item in self.edit_load_tree.get_children():
+                    values = self.edit_load_tree.item(item, "values")
+                    load_id, name, bus, p_mw, q_mvar = values
+                    load_id = int(load_id)
+                    
+                    if load_id in self.current_net.load.index:
+                        self.current_net.load.loc[load_id, "name"] = name
+                        self.current_net.load.loc[load_id, "bus"] = int(bus)
+                        self.current_net.load.loc[load_id, "p_mw"] = float(p_mw)
+                        self.current_net.load.loc[load_id, "q_mvar"] = float(q_mvar)
+            
+            # Run power flow with updated parameters
+            pp.runpp(self.current_net)
+            self._display_results(self.current_net)
+            messagebox.showinfo("Success", "Changes applied and power flow completed successfully!")
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to apply changes: {e}")
 
 
 def main() -> None:
