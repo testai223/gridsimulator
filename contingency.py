@@ -13,6 +13,7 @@ class ContingencyAnalysis:
         """Initialize with base case network."""
         self.base_net = copy.deepcopy(base_net)
         self.contingency_results = []
+        self.violations = []
 
     def run_n1_analysis(self) -> List[Dict[str, Any]]:
         """
@@ -20,6 +21,7 @@ class ContingencyAnalysis:
         Returns list of contingency results.
         """
         self.contingency_results = []
+        self.violations = []
         
         # Run base case first
         base_result = self._analyze_base_case()
@@ -61,6 +63,12 @@ class ContingencyAnalysis:
                 'overload_violations': self._count_overload_violations(net),
                 'severity': 'Normal'
             }
+            
+            # Collect detailed violations if any exist for base case
+            if result['voltage_violations'] > 0 or result['overload_violations'] > 0:
+                self._collect_detailed_violations(net, 'Base Case', 'No outages')
+            
+            return result
         except Exception as e:
             return {
                 'contingency_type': 'Base Case',
@@ -103,6 +111,10 @@ class ContingencyAnalysis:
                 # Determine severity
                 result['severity'] = self._assess_severity(result)
                 results.append(result)
+                
+                # Collect detailed violations if any exist
+                if result['voltage_violations'] > 0 or result['overload_violations'] > 0:
+                    self._collect_detailed_violations(net, 'Line Outage', line_name)
                 
             except Exception as e:
                 results.append({
@@ -150,6 +162,10 @@ class ContingencyAnalysis:
                 
                 result['severity'] = self._assess_severity(result)
                 results.append(result)
+                
+                # Collect detailed violations if any exist
+                if result['voltage_violations'] > 0 or result['overload_violations'] > 0:
+                    self._collect_detailed_violations(net, 'Transformer Outage', trafo_name)
                 
             except Exception as e:
                 results.append({
@@ -202,6 +218,10 @@ class ContingencyAnalysis:
                 result['severity'] = self._assess_severity(result)
                 results.append(result)
                 
+                # Collect detailed violations if any exist
+                if result['voltage_violations'] > 0 or result['overload_violations'] > 0:
+                    self._collect_detailed_violations(net, 'Generator Outage', gen_name)
+                
             except Exception as e:
                 results.append({
                     'contingency_type': 'Generator Outage',
@@ -221,6 +241,64 @@ class ContingencyAnalysis:
             if vm < 0.95 or vm > 1.05:
                 violations += 1
         return violations
+
+    def _collect_detailed_violations(self, net: pp.pandapowerNet, contingency_type: str, element_name: str) -> None:
+        """Collect detailed violation information for violations table."""
+        # Voltage violations
+        for bus_id, row in net.res_bus.iterrows():
+            vm_pu = row['vm_pu']
+            if vm_pu < 0.95 or vm_pu > 1.05:
+                bus_name = net.bus.loc[bus_id, 'name'] if 'name' in net.bus.columns else f"Bus {bus_id}"
+                violation_type = "Low Voltage" if vm_pu < 0.95 else "High Voltage"
+                self.violations.append({
+                    'contingency_type': contingency_type,
+                    'contingency_element': element_name,
+                    'violation_type': violation_type,
+                    'element_type': 'Bus',
+                    'element_id': int(bus_id),
+                    'element_name': bus_name,
+                    'violation_value': f"{vm_pu:.3f} p.u.",
+                    'limit_value': "0.95-1.05 p.u.",
+                    'severity': 'Critical' if vm_pu < 0.90 or vm_pu > 1.10 else 'High'
+                })
+        
+        # Line overload violations
+        if not net.res_line.empty:
+            for line_id, row in net.res_line.iterrows():
+                if line_id in net.line.index and net.line.loc[line_id, 'in_service']:
+                    loading = row['loading_percent']
+                    if loading > 100:
+                        line_name = net.line.loc[line_id, 'name'] if 'name' in net.line.columns else f"Line {line_id}"
+                        self.violations.append({
+                            'contingency_type': contingency_type,
+                            'contingency_element': element_name,
+                            'violation_type': 'Overload',
+                            'element_type': 'Line',
+                            'element_id': int(line_id),
+                            'element_name': line_name,
+                            'violation_value': f"{loading:.1f}%",
+                            'limit_value': "100%",
+                            'severity': 'Critical' if loading > 150 else 'High'
+                        })
+        
+        # Transformer overload violations
+        if hasattr(net, 'res_trafo') and not net.res_trafo.empty:
+            for trafo_id, row in net.res_trafo.iterrows():
+                if trafo_id in net.trafo.index and net.trafo.loc[trafo_id, 'in_service']:
+                    loading = row['loading_percent']
+                    if loading > 100:
+                        trafo_name = net.trafo.loc[trafo_id, 'name'] if 'name' in net.trafo.columns else f"Trafo {trafo_id}"
+                        self.violations.append({
+                            'contingency_type': contingency_type,
+                            'contingency_element': element_name,
+                            'violation_type': 'Overload',
+                            'element_type': 'Transformer',
+                            'element_id': int(trafo_id),
+                            'element_name': trafo_name,
+                            'violation_value': f"{loading:.1f}%",
+                            'limit_value': "100%",
+                            'severity': 'Critical' if loading > 150 else 'High'
+                        })
 
     def _count_overload_violations(self, net: pp.pandapowerNet) -> int:
         """Count overload violations (>100% loading)."""

@@ -331,6 +331,7 @@ class GridApp:
         
         ttk.Button(button_frame, text="Run N-1 Analysis", command=self._run_contingency_analysis).pack(side=tk.LEFT, padx=5)
         ttk.Button(button_frame, text="Export Results", command=self._export_contingency_results).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Export Violations", command=self._export_violations).pack(side=tk.LEFT, padx=5)
         
         # Summary panel
         summary_frame = ttk.LabelFrame(self.contingency_frame, text="Analysis Summary")
@@ -419,6 +420,48 @@ class GridApp:
         # Configure alternating row colors for better readability
         self.contingency_tree.tag_configure("oddrow", background="#f0f0f0")
         self.contingency_tree.tag_configure("evenrow", background="#ffffff")
+        
+        # Violations table
+        violations_frame = ttk.LabelFrame(self.contingency_frame, text="Detailed Violations")
+        violations_frame.pack(fill="both", expand=True, pady=5, padx=10)
+        
+        # Create violations table
+        violations_columns = ("contingency_type", "contingency_element", "violation_type", "element_type", "element_name", "violation_value", "limit_value", "severity")
+        self.violations_tree = ttk.Treeview(
+            violations_frame, columns=violations_columns, show="headings", height=10
+        )
+        
+        # Configure headers
+        self.violations_tree.heading("contingency_type", text="Contingency Type")
+        self.violations_tree.heading("contingency_element", text="Contingency Element")
+        self.violations_tree.heading("violation_type", text="Violation Type")
+        self.violations_tree.heading("element_type", text="Element Type")
+        self.violations_tree.heading("element_name", text="Element Name")
+        self.violations_tree.heading("violation_value", text="Value")
+        self.violations_tree.heading("limit_value", text="Limit")
+        self.violations_tree.heading("severity", text="Severity")
+        
+        # Configure column widths
+        self.violations_tree.column("contingency_type", width=120, anchor="w")
+        self.violations_tree.column("contingency_element", width=150, anchor="w")
+        self.violations_tree.column("violation_type", width=120, anchor="w")
+        self.violations_tree.column("element_type", width=100, anchor="center")
+        self.violations_tree.column("element_name", width=120, anchor="w")
+        self.violations_tree.column("violation_value", width=100, anchor="e")
+        self.violations_tree.column("limit_value", width=100, anchor="e")
+        self.violations_tree.column("severity", width=80, anchor="center")
+        
+        # Add scrollbar for violations table
+        violations_scrollbar = ttk.Scrollbar(violations_frame, orient="vertical", command=self.violations_tree.yview)
+        self.violations_tree.configure(yscrollcommand=violations_scrollbar.set)
+        
+        self.violations_tree.pack(side="left", fill="both", expand=True)
+        violations_scrollbar.pack(side="right", fill="y")
+        
+        # Configure row colors for violations table
+        self.violations_tree.tag_configure("Critical", background="#ff9999", foreground="#000000")
+        self.violations_tree.tag_configure("High", background="#ffcc99", foreground="#000000")
+        self.violations_tree.tag_configure("Medium", background="#ffff99", foreground="#000000")
 
     def add_bus(self) -> None:
         name = self.bus_name.get()
@@ -907,6 +950,7 @@ class GridApp:
             
             # Display results
             self._display_contingency_results(results, contingency)
+            self._display_violations(contingency.violations)
             
             messagebox.showinfo("Success", f"Contingency analysis completed. Analyzed {len(results)} contingencies.")
             
@@ -1023,6 +1067,73 @@ Severity Breakdown:
         
         except Exception as e:
             messagebox.showerror("Error", f"Failed to export results: {e}")
+    
+    def _display_violations(self, violations):
+        """Display detailed violations in the violations table."""
+        # Clear previous violations
+        for item in self.violations_tree.get_children():
+            self.violations_tree.delete(item)
+        
+        # Display violations
+        for i, violation in enumerate(violations):
+            severity = violation['severity']
+            
+            # Determine color tag
+            if severity == 'Critical':
+                tag = 'Critical'
+            elif severity == 'High':
+                tag = 'High'
+            else:
+                tag = 'Medium'
+            
+            self.violations_tree.insert(
+                "", "end",
+                values=(
+                    violation['contingency_type'],
+                    violation['contingency_element'],
+                    violation['violation_type'],
+                    violation['element_type'],
+                    violation['element_name'],
+                    violation['violation_value'],
+                    violation['limit_value'],
+                    violation['severity']
+                ),
+                tags=(tag,)
+            )
+    
+    def _export_violations(self):
+        """Export violations to CSV file."""
+        if not hasattr(self, 'violations_tree') or not self.violations_tree.get_children():
+            messagebox.showinfo("Info", "No violations to export")
+            return
+        
+        try:
+            from tkinter import filedialog
+            filename = filedialog.asksaveasfilename(
+                title="Export Violations",
+                defaultextension=".csv",
+                filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
+            )
+            
+            if filename:
+                import csv
+                with open(filename, 'w', newline='') as csvfile:
+                    writer = csv.writer(csvfile)
+                    
+                    # Write header
+                    headers = ["Contingency Type", "Contingency Element", "Violation Type", 
+                              "Element Type", "Element Name", "Value", "Limit", "Severity"]
+                    writer.writerow(headers)
+                    
+                    # Write data
+                    for item in self.violations_tree.get_children():
+                        values = self.violations_tree.item(item, "values")
+                        writer.writerow(values)
+                
+                messagebox.showinfo("Success", f"Violations exported to {filename}")
+        
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to export violations: {e}")
 
 
 def main() -> None:
