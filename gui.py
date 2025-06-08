@@ -5,7 +5,9 @@ from tkinter import ttk
 from tkinter import messagebox
 
 from database import GridDatabase
-from engine import GridCalculator
+from engine import GridCalculator, grid_graph
+import networkx as nx
+import matplotlib.pyplot as plt
 from examples import create_example_grid
 
 import pandapower as pp
@@ -17,6 +19,7 @@ class GridApp:
     def __init__(self, root: tk.Tk, db: GridDatabase) -> None:
         self.root = root
         self.db = db
+        self.current_net = None
         self.root.title("Grid Simulator")
 
         self._build_widgets()
@@ -73,6 +76,11 @@ class GridApp:
             self.result_frame,
             text="Run Example Grid",
             command=self.run_example_grid,
+        ).pack()
+        ttk.Button(
+            self.result_frame,
+            text="Show Grid Graph",
+            command=self.show_graph,
         ).pack()
 
         # Table for bus voltages
@@ -140,6 +148,7 @@ class GridApp:
 
     def _display_results(self, net: pp.pandapowerNet) -> None:
         """Show calculation results in the GUI tables and text box."""
+        self.current_net = net
         self.text.delete("1.0", tk.END)
         self.text.insert(tk.END, str(net.res_bus))
 
@@ -165,6 +174,17 @@ class GridApp:
                         round(row["p_to_mw"], 3),
                     ),
                 )
+
+    def show_graph(self) -> None:
+        """Display the current network as a graph using matplotlib."""
+        if self.current_net is None:
+            messagebox.showinfo("Info", "Run a load flow first")
+            return
+        g = grid_graph(self.current_net)
+        pos = nx.spring_layout(g)
+        plt.figure()
+        nx.draw(g, pos, with_labels=True, node_color="#A0CBE2")
+        plt.show()
 
 
 def main() -> None:

@@ -44,6 +44,8 @@ class GridCalculator:
     def run_powerflow(self) -> pp.pandapowerNet:
         """Execute a power flow calculation and return the pandapower network."""
         self.build_network()
+        if self.net.ext_grid.empty and not self.net.bus.empty:
+            pp.create_ext_grid(self.net, bus=self.net.bus.index[0], vm_pu=1.0)
         pp.runpp(self.net)
         return self.net
 
@@ -72,4 +74,16 @@ def element_tables(net: pp.pandapowerNet) -> str:
             tables.append(f"{title}\n{df.to_string()}\n")
 
     return "\n".join(tables)
+
+
+def grid_graph(net: pp.pandapowerNet):
+    """Return a NetworkX graph representation of the buses and lines in *net*."""
+    import networkx as nx
+
+    g = nx.Graph()
+    for idx, row in net.bus.iterrows():
+        g.add_node(int(idx), name=row.get("name", str(idx)))
+    for idx, row in net.line.iterrows():
+        g.add_edge(int(row["from_bus"]), int(row["to_bus"]), id=int(idx))
+    return g
 
