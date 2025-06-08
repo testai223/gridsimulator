@@ -12,6 +12,7 @@ from examples import create_example_grid, create_ieee_9_bus, create_ieee_39_bus
 from contingency import ContingencyAnalysis
 
 import pandapower as pp
+from datetime import datetime
 
 
 class GridApp:
@@ -21,7 +22,12 @@ class GridApp:
         self.root = root
         self.db = db
         self.current_net = None
+        self.current_grid_id = None
+        self.contingency_analysis = None
         self.root.title("Grid Simulator")
+        
+        # Initialize example grids in database
+        self.db.initialize_example_grids()
 
         self._build_widgets()
 
@@ -29,12 +35,14 @@ class GridApp:
         notebook = ttk.Notebook(self.root)
         notebook.pack(fill="both", expand=True)
 
+        self.grid_frame = ttk.Frame(notebook)
         self.bus_frame = ttk.Frame(notebook)
         self.line_frame = ttk.Frame(notebook)
         self.edit_frame = ttk.Frame(notebook)
         self.contingency_frame = ttk.Frame(notebook)
         self.result_frame = ttk.Frame(notebook)
 
+        notebook.add(self.grid_frame, text="Grid Manager")
         notebook.add(self.bus_frame, text="Buses")
         notebook.add(self.line_frame, text="Lines")
         notebook.add(self.edit_frame, text="Edit Network")
@@ -74,35 +82,43 @@ class GridApp:
             row=len(labels), column=0, columnspan=2
         )
 
+        # Grid Manager tab - Save/Load/Manage grids  
+        self._build_grid_manager_widgets()
+
         # Edit Network tab - Editable tables for network parameters
         self._build_edit_widgets()
 
         # Contingency Analysis tab
         self._build_contingency_widgets()
 
+        # Create button frame for better organization
+        button_frame_results = ttk.Frame(self.result_frame)
+        button_frame_results.pack(fill="x", pady=5)
+        
         ttk.Button(
-            self.result_frame, text="Run Load Flow", command=self.run_powerflow
-        ).pack()
+            button_frame_results, text="Run Load Flow on Current Grid", command=self.run_powerflow_current
+        ).pack(side=tk.LEFT, padx=5)
         ttk.Button(
-            self.result_frame,
-            text="Run Example Grid",
-            command=self.run_example_grid,
-        ).pack()
+            button_frame_results, text="Show Grid Graph", command=self.show_graph
+        ).pack(side=tk.LEFT, padx=5)
+        
+        # Separator
+        ttk.Separator(self.result_frame, orient='horizontal').pack(fill='x', pady=10)
+        
+        # Example grids section
+        ttk.Label(self.result_frame, text="Load Example Grids:", font=("Arial", 10, "bold")).pack()
+        example_frame = ttk.Frame(self.result_frame)
+        example_frame.pack(fill="x", pady=5)
+        
         ttk.Button(
-            self.result_frame,
-            text="Run IEEE 9-Bus",
-            command=self.run_ieee_9_bus,
-        ).pack()
+            example_frame, text="Simple Example", command=self.run_example_grid
+        ).pack(side=tk.LEFT, padx=5)
         ttk.Button(
-            self.result_frame,
-            text="Run IEEE 39-Bus",
-            command=self.run_ieee_39_bus,
-        ).pack()
+            example_frame, text="IEEE 9-Bus", command=self.run_ieee_9_bus
+        ).pack(side=tk.LEFT, padx=5)
         ttk.Button(
-            self.result_frame,
-            text="Show Grid Graph",
-            command=self.show_graph,
-        ).pack()
+            example_frame, text="IEEE 39-Bus", command=self.run_ieee_39_bus
+        ).pack(side=tk.LEFT, padx=5)
 
         # Table for bus voltages
         bus_columns = ("bus", "name", "vn_kv", "vm_pu", "va_degree", "p_mw", "q_mvar")
@@ -331,7 +347,8 @@ class GridApp:
         
         ttk.Button(button_frame, text="Run N-1 Analysis", command=self._run_contingency_analysis).pack(side=tk.LEFT, padx=5)
         ttk.Button(button_frame, text="Export Results", command=self._export_contingency_results).pack(side=tk.LEFT, padx=5)
-        ttk.Button(button_frame, text="Export Violations", command=self._export_violations).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Export Voltage Violations", command=self._export_voltage_violations).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Export Current Violations", command=self._export_current_violations).pack(side=tk.LEFT, padx=5)
         
         # Summary panel
         summary_frame = ttk.LabelFrame(self.contingency_frame, text="Analysis Summary")
@@ -421,47 +438,135 @@ class GridApp:
         self.contingency_tree.tag_configure("oddrow", background="#f0f0f0")
         self.contingency_tree.tag_configure("evenrow", background="#ffffff")
         
-        # Violations table
-        violations_frame = ttk.LabelFrame(self.contingency_frame, text="Detailed Violations")
-        violations_frame.pack(fill="both", expand=True, pady=5, padx=10)
+        # Create notebook for separate violation types
+        violations_notebook = ttk.Notebook(self.contingency_frame)
+        violations_notebook.pack(fill="both", expand=True, pady=5, padx=10)
         
-        # Create violations table
-        violations_columns = ("contingency_type", "contingency_element", "violation_type", "element_type", "element_name", "violation_value", "limit_value", "severity")
-        self.violations_tree = ttk.Treeview(
-            violations_frame, columns=violations_columns, show="headings", height=10
+        # Voltage violations tab
+        voltage_violations_frame = ttk.Frame(violations_notebook)
+        violations_notebook.add(voltage_violations_frame, text="Voltage Violations")
+        
+        # Current/Overload violations tab
+        current_violations_frame = ttk.Frame(violations_notebook)
+        violations_notebook.add(current_violations_frame, text="Current/Overload Violations")
+        
+        # Visual legend for voltage violations
+        voltage_legend_frame = ttk.Frame(voltage_violations_frame)
+        voltage_legend_frame.pack(fill="x", pady=2)
+        
+        voltage_legend_text = tk.Text(voltage_legend_frame, height=2, width=120, state='disabled', font=("TkDefaultFont", 8))
+        voltage_legend_text.pack(fill="x", pady=2)
+        
+        voltage_legend_text.config(state='normal')
+        voltage_legend_text.insert(tk.END, "Voltage Indicators: ")
+        voltage_legend_text.insert(tk.END, "🔺⬆️📈", "high_v_indicators")
+        voltage_legend_text.insert(tk.END, " High Voltage  ")
+        voltage_legend_text.insert(tk.END, "🔻⬇️📉🔋", "low_v_indicators")
+        voltage_legend_text.insert(tk.END, " Low Voltage  ")
+        voltage_legend_text.insert(tk.END, "✅", "ok_indicators")
+        voltage_legend_text.insert(tk.END, " No Violations")
+        voltage_legend_text.insert(tk.END, "\nSeverity: Critical (<0.95 or >1.05 p.u.)  High (<0.97 or >1.03 p.u.)  Medium (<0.98 or >1.02 p.u.)")
+        
+        voltage_legend_text.tag_configure("high_v_indicators", foreground="#ff4400", font=("TkDefaultFont", 8, "bold"))
+        voltage_legend_text.tag_configure("low_v_indicators", foreground="#0066ff", font=("TkDefaultFont", 8, "bold"))
+        voltage_legend_text.tag_configure("ok_indicators", foreground="#008000", font=("TkDefaultFont", 8, "bold"))
+        voltage_legend_text.config(state='disabled')
+        
+        # Create voltage violations table
+        voltage_columns = ("indicator", "contingency_type", "contingency_element", "bus_name", "voltage_pu", "limit", "severity")
+        self.voltage_violations_tree = ttk.Treeview(
+            voltage_violations_frame, columns=voltage_columns, show="headings", height=12
         )
         
-        # Configure headers
-        self.violations_tree.heading("contingency_type", text="Contingency Type")
-        self.violations_tree.heading("contingency_element", text="Contingency Element")
-        self.violations_tree.heading("violation_type", text="Violation Type")
-        self.violations_tree.heading("element_type", text="Element Type")
-        self.violations_tree.heading("element_name", text="Element Name")
-        self.violations_tree.heading("violation_value", text="Value")
-        self.violations_tree.heading("limit_value", text="Limit")
-        self.violations_tree.heading("severity", text="Severity")
+        # Configure voltage violations headers
+        self.voltage_violations_tree.heading("indicator", text="⚡")
+        self.voltage_violations_tree.heading("contingency_type", text="Contingency Type")
+        self.voltage_violations_tree.heading("contingency_element", text="Contingency Element")
+        self.voltage_violations_tree.heading("bus_name", text="Bus Name")
+        self.voltage_violations_tree.heading("voltage_pu", text="Voltage (p.u.)")
+        self.voltage_violations_tree.heading("limit", text="Limit")
+        self.voltage_violations_tree.heading("severity", text="Severity")
         
-        # Configure column widths
-        self.violations_tree.column("contingency_type", width=120, anchor="w")
-        self.violations_tree.column("contingency_element", width=150, anchor="w")
-        self.violations_tree.column("violation_type", width=120, anchor="w")
-        self.violations_tree.column("element_type", width=100, anchor="center")
-        self.violations_tree.column("element_name", width=120, anchor="w")
-        self.violations_tree.column("violation_value", width=100, anchor="e")
-        self.violations_tree.column("limit_value", width=100, anchor="e")
-        self.violations_tree.column("severity", width=80, anchor="center")
+        # Configure voltage violations column widths
+        self.voltage_violations_tree.column("indicator", width=50, anchor="center")
+        self.voltage_violations_tree.column("contingency_type", width=140, anchor="w")
+        self.voltage_violations_tree.column("contingency_element", width=180, anchor="w")
+        self.voltage_violations_tree.column("bus_name", width=120, anchor="w")
+        self.voltage_violations_tree.column("voltage_pu", width=120, anchor="e")
+        self.voltage_violations_tree.column("limit", width=120, anchor="center")
+        self.voltage_violations_tree.column("severity", width=100, anchor="center")
         
-        # Add scrollbar for violations table
-        violations_scrollbar = ttk.Scrollbar(violations_frame, orient="vertical", command=self.violations_tree.yview)
-        self.violations_tree.configure(yscrollcommand=violations_scrollbar.set)
+        # Add scrollbar for voltage violations
+        voltage_scrollbar = ttk.Scrollbar(voltage_violations_frame, orient="vertical", command=self.voltage_violations_tree.yview)
+        self.voltage_violations_tree.configure(yscrollcommand=voltage_scrollbar.set)
         
-        self.violations_tree.pack(side="left", fill="both", expand=True)
-        violations_scrollbar.pack(side="right", fill="y")
+        self.voltage_violations_tree.pack(side="left", fill="both", expand=True)
+        voltage_scrollbar.pack(side="right", fill="y")
         
-        # Configure row colors for violations table
-        self.violations_tree.tag_configure("Critical", background="#ff9999", foreground="#000000")
-        self.violations_tree.tag_configure("High", background="#ffcc99", foreground="#000000")
-        self.violations_tree.tag_configure("Medium", background="#ffff99", foreground="#000000")
+        # Visual legend for current violations
+        current_legend_frame = ttk.Frame(current_violations_frame)
+        current_legend_frame.pack(fill="x", pady=2)
+        
+        current_legend_text = tk.Text(current_legend_frame, height=2, width=120, state='disabled', font=("TkDefaultFont", 8))
+        current_legend_text.pack(fill="x", pady=2)
+        
+        current_legend_text.config(state='normal')
+        current_legend_text.insert(tk.END, "Current/Overload Indicators: ")
+        current_legend_text.insert(tk.END, "⚡🔥", "critical_i_indicators")
+        current_legend_text.insert(tk.END, " Critical Overload  ")
+        current_legend_text.insert(tk.END, "⚠️🌡️📊", "high_i_indicators")
+        current_legend_text.insert(tk.END, " High Loading  ")
+        current_legend_text.insert(tk.END, "✅", "ok_indicators")
+        current_legend_text.insert(tk.END, " No Violations")
+        current_legend_text.insert(tk.END, "\nSeverity: Critical (>120%)  High (>85%)  Medium (>75%)  Lines and Transformers")
+        
+        current_legend_text.tag_configure("critical_i_indicators", foreground="#ff0000", font=("TkDefaultFont", 8, "bold"))
+        current_legend_text.tag_configure("high_i_indicators", foreground="#ff8800", font=("TkDefaultFont", 8, "bold"))
+        current_legend_text.tag_configure("ok_indicators", foreground="#008000", font=("TkDefaultFont", 8, "bold"))
+        current_legend_text.config(state='disabled')
+        
+        # Create current violations table
+        current_columns = ("indicator", "contingency_type", "contingency_element", "element_type", "element_name", "loading_percent", "limit", "severity")
+        self.current_violations_tree = ttk.Treeview(
+            current_violations_frame, columns=current_columns, show="headings", height=12
+        )
+        
+        # Configure current violations headers
+        self.current_violations_tree.heading("indicator", text="⚡")
+        self.current_violations_tree.heading("contingency_type", text="Contingency Type")
+        self.current_violations_tree.heading("contingency_element", text="Contingency Element")
+        self.current_violations_tree.heading("element_type", text="Element Type")
+        self.current_violations_tree.heading("element_name", text="Element Name")
+        self.current_violations_tree.heading("loading_percent", text="Loading (%)")
+        self.current_violations_tree.heading("limit", text="Limit")
+        self.current_violations_tree.heading("severity", text="Severity")
+        
+        # Configure current violations column widths
+        self.current_violations_tree.column("indicator", width=50, anchor="center")
+        self.current_violations_tree.column("contingency_type", width=140, anchor="w")
+        self.current_violations_tree.column("contingency_element", width=180, anchor="w")
+        self.current_violations_tree.column("element_type", width=100, anchor="center")
+        self.current_violations_tree.column("element_name", width=140, anchor="w")
+        self.current_violations_tree.column("loading_percent", width=120, anchor="e")
+        self.current_violations_tree.column("limit", width=100, anchor="center")
+        self.current_violations_tree.column("severity", width=100, anchor="center")
+        
+        # Add scrollbar for current violations
+        current_scrollbar = ttk.Scrollbar(current_violations_frame, orient="vertical", command=self.current_violations_tree.yview)
+        self.current_violations_tree.configure(yscrollcommand=current_scrollbar.set)
+        
+        self.current_violations_tree.pack(side="left", fill="both", expand=True)
+        current_scrollbar.pack(side="right", fill="y")
+        
+        # Configure enhanced row colors for both tables
+        for tree in [self.voltage_violations_tree, self.current_violations_tree]:
+            tree.tag_configure("Critical", background="#ff4d4d", foreground="#ffffff", font=("TkDefaultFont", 9, "bold"))
+            tree.tag_configure("High", background="#ff8800", foreground="#ffffff", font=("TkDefaultFont", 9, "bold"))
+            tree.tag_configure("Medium", background="#ffcc00", foreground="#000000", font=("TkDefaultFont", 9))
+            tree.tag_configure("Critical_stripe", background="#ff6666", foreground="#ffffff", font=("TkDefaultFont", 9, "bold"))
+            tree.tag_configure("High_stripe", background="#ffaa33", foreground="#ffffff", font=("TkDefaultFont", 9, "bold"))
+            tree.tag_configure("Medium_stripe", background="#ffdd33", foreground="#000000", font=("TkDefaultFont", 9))
+            tree.tag_configure("no_violations", background="#d4edda", foreground="#155724", font=("TkDefaultFont", 9, "italic"))
 
     def add_bus(self) -> None:
         name = self.bus_name.get()
@@ -492,11 +597,60 @@ class GridApp:
             messagebox.showerror("Error", str(exc))
             return
         self._display_results(net)
+    
+    def run_powerflow_current(self) -> None:
+        """Run power flow on the currently loaded grid."""
+        if self.current_net is None:
+            messagebox.showwarning("Warning", "No grid is currently loaded")
+            return
+        
+        try:
+            # Validate network has required components
+            if len(self.current_net.bus) == 0:
+                raise Exception("Network has no buses")
+            
+            # Ensure there's a slack bus
+            has_slack = False
+            if hasattr(self.current_net, 'ext_grid') and not self.current_net.ext_grid.empty:
+                has_slack = True
+            elif hasattr(self.current_net, 'gen') and not self.current_net.gen.empty:
+                has_slack = any(self.current_net.gen['slack'])
+            
+            if not has_slack:
+                # Add external grid to first bus as slack
+                pp.create_ext_grid(self.current_net, bus=self.current_net.bus.index[0], vm_pu=1.0, name="Auto Slack")
+                messagebox.showinfo("Info", f"Added automatic external grid to bus {self.current_net.bus.index[0]} for slack reference")
+            
+            # Run power flow
+            pp.runpp(self.current_net, verbose=False)
+            
+            # Update displays
+            self._display_results(self.current_net)
+            if hasattr(self, '_refresh_edit_tables'):
+                self._refresh_edit_tables()
+            
+            # Update grid status
+            if self.current_grid_id:
+                cur = self.db.conn.cursor()
+                cur.execute("SELECT name FROM grids WHERE id = ?", (self.current_grid_id,))
+                result = cur.fetchone()
+                if result:
+                    self.current_grid_label.config(text=result[0], foreground="green")
+            
+            messagebox.showinfo("Success", "Power flow calculation completed successfully")
+            
+        except pp.LoadflowNotConverged:
+            messagebox.showerror("Power Flow Error", "Power flow did not converge.\nCheck network connectivity and generation/load balance.")
+        except Exception as exc:
+            messagebox.showerror("Error", f"Power flow calculation failed: {str(exc)}")
 
     def run_example_grid(self) -> None:
         try:
             net = create_example_grid()
             pp.runpp(net)
+            self.current_net = net
+            self.current_grid_id = None  # Not saved yet
+            self.current_grid_label.config(text="Simple Example (unsaved)", foreground="orange")
         except Exception as exc:  # broad except to show message
             messagebox.showerror("Error", str(exc))
             return
@@ -507,6 +661,9 @@ class GridApp:
         try:
             net = create_ieee_9_bus()
             pp.runpp(net)
+            self.current_net = net
+            self.current_grid_id = None  # Not saved yet
+            self.current_grid_label.config(text="IEEE 9-Bus (unsaved)", foreground="orange")
         except Exception as exc:  # broad except to show message
             messagebox.showerror("Error", str(exc))
             return
@@ -517,6 +674,9 @@ class GridApp:
         try:
             net = create_ieee_39_bus()
             pp.runpp(net)
+            self.current_net = net
+            self.current_grid_id = None  # Not saved yet
+            self.current_grid_label.config(text="IEEE 39-Bus (unsaved)", foreground="orange")
         except Exception as exc:  # broad except to show message
             messagebox.showerror("Error", str(exc))
             return
@@ -950,7 +1110,7 @@ class GridApp:
             
             # Display results
             self._display_contingency_results(results, contingency)
-            self._display_violations(contingency.violations)
+            self._display_separate_violations(contingency.violations)
             
             messagebox.showinfo("Success", f"Contingency analysis completed. Analyzed {len(results)} contingencies.")
             
@@ -1068,49 +1228,153 @@ Severity Breakdown:
         except Exception as e:
             messagebox.showerror("Error", f"Failed to export results: {e}")
     
-    def _display_violations(self, violations):
-        """Display detailed violations in the violations table."""
+    def _display_separate_violations(self, violations):
+        """Display detailed violations in separate voltage and current tables."""
         # Clear previous violations
-        for item in self.violations_tree.get_children():
-            self.violations_tree.delete(item)
+        for item in self.voltage_violations_tree.get_children():
+            self.voltage_violations_tree.delete(item)
+        for item in self.current_violations_tree.get_children():
+            self.current_violations_tree.delete(item)
         
-        # Display violations
-        for i, violation in enumerate(violations):
-            severity = violation['severity']
-            
-            # Determine color tag
-            if severity == 'Critical':
-                tag = 'Critical'
-            elif severity == 'High':
-                tag = 'High'
-            else:
-                tag = 'Medium'
-            
-            self.violations_tree.insert(
+        if not violations:
+            # Add messages if no violations found
+            self.voltage_violations_tree.insert(
                 "", "end",
-                values=(
-                    violation['contingency_type'],
-                    violation['contingency_element'],
-                    violation['violation_type'],
-                    violation['element_type'],
-                    violation['element_name'],
-                    violation['violation_value'],
-                    violation['limit_value'],
-                    violation['severity']
-                ),
-                tags=(tag,)
+                values=("✅", "No voltage violations detected", "", "", "", "0.97-1.03 p.u.", "System OK"),
+                tags=("no_violations",)
             )
+            self.current_violations_tree.insert(
+                "", "end",
+                values=("✅", "No current violations detected", "", "", "", "", "85%", "System OK"),
+                tags=("no_violations",)
+            )
+            return
+        
+        # Sort violations by severity (Critical first, then High, then Medium)
+        severity_order = {'Critical': 0, 'High': 1, 'Medium': 2}
+        sorted_violations = sorted(violations, key=lambda x: severity_order.get(x['severity'], 3))
+        
+        # Separate violations by type
+        voltage_violations = [v for v in sorted_violations if 'Voltage' in v['violation_type']]
+        current_violations = [v for v in sorted_violations if 'Overload' in v['violation_type']]
+        
+        # Display voltage violations
+        if not voltage_violations:
+            self.voltage_violations_tree.insert(
+                "", "end",
+                values=("✅", "No voltage violations detected", "", "", "", "0.95-1.05 p.u.", "System OK"),
+                tags=("no_violations",)
+            )
+        else:
+            for i, violation in enumerate(voltage_violations):
+                severity = violation['severity']
+                violation_type = violation['violation_type']
+                
+                # Visual indicators for voltage violations
+                if severity == 'Critical':
+                    if violation_type == 'Low Voltage':
+                        indicator = "🔻"  # Down arrow for low voltage
+                    else:  # High Voltage
+                        indicator = "🔺"  # Up arrow for high voltage  
+                    tag = 'Critical' if i % 2 == 0 else 'Critical_stripe'
+                elif severity == 'High':
+                    if violation_type == 'Low Voltage':
+                        indicator = "⬇️"   # Down arrow for low voltage
+                    else:  # High Voltage
+                        indicator = "⬆️"   # Up arrow for high voltage
+                    tag = 'High' if i % 2 == 0 else 'High_stripe'
+                else:  # Medium
+                    if violation_type == 'Low Voltage':
+                        indicator = "📉"  # Chart down for medium low voltage
+                    else:  # High Voltage
+                        indicator = "📈"  # Chart up for medium high voltage
+                    tag = 'Medium' if i % 2 == 0 else 'Medium_stripe'
+                
+                # Format voltage value with indicators
+                voltage_value = violation['violation_value']
+                if 'p.u.' in voltage_value:
+                    try:
+                        current_val = float(voltage_value.replace(' p.u.', ''))
+                        if current_val < 0.90:
+                            voltage_value += " 🔋"  # Battery low for very low voltage
+                        elif current_val > 1.10:
+                            voltage_value += " ⚡"  # Lightning for very high voltage
+                    except:
+                        pass
+                
+                self.voltage_violations_tree.insert(
+                    "", "end",
+                    values=(
+                        indicator,
+                        violation['contingency_type'],
+                        violation['contingency_element'],
+                        violation['element_name'],
+                        voltage_value,
+                        violation['limit_value'],
+                        violation['severity']
+                    ),
+                    tags=(tag,)
+                )
+        
+        # Display current violations
+        if not current_violations:
+            self.current_violations_tree.insert(
+                "", "end",
+                values=("✅", "No current violations detected", "", "", "", "", "100%", "System OK"),
+                tags=("no_violations",)
+            )
+        else:
+            for i, violation in enumerate(current_violations):
+                severity = violation['severity']
+                
+                # Visual indicators for current violations
+                if severity == 'Critical':
+                    indicator = "⚡"  # Lightning for critical overload
+                    tag = 'Critical' if i % 2 == 0 else 'Critical_stripe'
+                elif severity == 'High':
+                    indicator = "⚠️"   # Warning for high overload
+                    tag = 'High' if i % 2 == 0 else 'High_stripe'
+                else:  # Medium
+                    indicator = "📊"  # Chart for medium overload
+                    tag = 'Medium' if i % 2 == 0 else 'Medium_stripe'
+                
+                # Format loading value with indicators
+                loading_value = violation['violation_value']
+                if '%' in loading_value:
+                    try:
+                        current_val = float(loading_value.replace('%', ''))
+                        if current_val > 150:
+                            loading_value += " 🔥"  # Fire for severe overload
+                        elif current_val > 120:
+                            loading_value += " 🌡️"   # Thermometer for high overload
+                    except:
+                        pass
+                
+                self.current_violations_tree.insert(
+                    "", "end",
+                    values=(
+                        indicator,
+                        violation['contingency_type'],
+                        violation['contingency_element'],
+                        violation['element_type'],
+                        violation['element_name'],
+                        loading_value,
+                        violation['limit_value'],
+                        violation['severity']
+                    ),
+                    tags=(tag,)
+                )
     
-    def _export_violations(self):
-        """Export violations to CSV file."""
-        if not hasattr(self, 'violations_tree') or not self.violations_tree.get_children():
-            messagebox.showinfo("Info", "No violations to export")
+    def _export_voltage_violations(self):
+        """Export voltage violations to CSV file."""
+        if not hasattr(self, 'voltage_violations_tree') or not self.voltage_violations_tree.get_children():
+            messagebox.showinfo("Info", "No voltage violations to export")
             return
         
         try:
             from tkinter import filedialog
             filename = filedialog.asksaveasfilename(
-                title="Export Violations",
+                title="Export Voltage Violations",
                 defaultextension=".csv",
                 filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
             )
@@ -1121,19 +1385,403 @@ Severity Breakdown:
                     writer = csv.writer(csvfile)
                     
                     # Write header
-                    headers = ["Contingency Type", "Contingency Element", "Violation Type", 
-                              "Element Type", "Element Name", "Value", "Limit", "Severity"]
+                    headers = ["Indicator", "Contingency Type", "Contingency Element", "Bus Name", 
+                              "Voltage (p.u.)", "Limit", "Severity"]
                     writer.writerow(headers)
                     
                     # Write data
-                    for item in self.violations_tree.get_children():
-                        values = self.violations_tree.item(item, "values")
+                    for item in self.voltage_violations_tree.get_children():
+                        values = self.voltage_violations_tree.item(item, "values")
                         writer.writerow(values)
                 
-                messagebox.showinfo("Success", f"Violations exported to {filename}")
+                messagebox.showinfo("Success", f"Voltage violations exported to {filename}")
         
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to export violations: {e}")
+            messagebox.showerror("Error", f"Failed to export voltage violations: {e}")
+
+    def _export_current_violations(self):
+        """Export current/overload violations to CSV file."""
+        if not hasattr(self, 'current_violations_tree') or not self.current_violations_tree.get_children():
+            messagebox.showinfo("Info", "No current violations to export")
+            return
+        
+        try:
+            from tkinter import filedialog
+            filename = filedialog.asksaveasfilename(
+                title="Export Current Violations",
+                defaultextension=".csv",
+                filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
+            )
+            
+            if filename:
+                import csv
+                with open(filename, 'w', newline='') as csvfile:
+                    writer = csv.writer(csvfile)
+                    
+                    # Write header
+                    headers = ["Indicator", "Contingency Type", "Contingency Element", "Element Type", 
+                              "Element Name", "Loading (%)", "Limit", "Severity"]
+                    writer.writerow(headers)
+                    
+                    # Write data
+                    for item in self.current_violations_tree.get_children():
+                        values = self.current_violations_tree.item(item, "values")
+                        writer.writerow(values)
+                
+                messagebox.showinfo("Success", f"Current violations exported to {filename}")
+        
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to export current violations: {e}")
+
+    def _build_grid_manager_widgets(self) -> None:
+        """Build the grid management interface."""
+        # Title
+        title_frame = ttk.Frame(self.grid_frame)
+        title_frame.pack(fill="x", pady=10)
+        ttk.Label(title_frame, text="Grid Database Manager", font=("Arial", 14, "bold")).pack()
+        
+        # Control panel
+        control_frame = ttk.LabelFrame(self.grid_frame, text="Grid Operations")
+        control_frame.pack(fill="x", pady=5, padx=10)
+        
+        # Current grid info
+        current_frame = ttk.Frame(control_frame)
+        current_frame.pack(fill="x", pady=5)
+        
+        ttk.Label(current_frame, text="Current Grid:").pack(side=tk.LEFT)
+        self.current_grid_label = ttk.Label(current_frame, text="None loaded", foreground="red")
+        self.current_grid_label.pack(side=tk.LEFT, padx=10)
+        
+        # Buttons
+        button_frame = ttk.Frame(control_frame)
+        button_frame.pack(fill="x", pady=5)
+        
+        ttk.Button(button_frame, text="Save Current Grid", command=self._save_current_grid).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Load Selected Grid", command=self._load_selected_grid).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Delete Selected Grid", command=self._delete_selected_grid).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Refresh List", command=self._refresh_grid_list).pack(side=tk.LEFT, padx=5)
+        
+        # Grid list
+        list_frame = ttk.LabelFrame(self.grid_frame, text="Saved Grids")
+        list_frame.pack(fill="both", expand=True, pady=5, padx=10)
+        
+        # Create grid list table
+        grid_columns = ("id", "name", "description", "type", "created", "modified")
+        self.grid_tree = ttk.Treeview(
+            list_frame, columns=grid_columns, show="headings", height=15
+        )
+        
+        # Configure headers
+        self.grid_tree.heading("id", text="ID")
+        self.grid_tree.heading("name", text="Grid Name")
+        self.grid_tree.heading("description", text="Description")
+        self.grid_tree.heading("type", text="Type")
+        self.grid_tree.heading("created", text="Created")
+        self.grid_tree.heading("modified", text="Modified")
+        
+        # Configure column widths
+        self.grid_tree.column("id", width=50, anchor="center")
+        self.grid_tree.column("name", width=200, anchor="w")
+        self.grid_tree.column("description", width=300, anchor="w")
+        self.grid_tree.column("type", width=80, anchor="center")
+        self.grid_tree.column("created", width=150, anchor="center")
+        self.grid_tree.column("modified", width=150, anchor="center")
+        
+        # Add scrollbar
+        grid_scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=self.grid_tree.yview)
+        self.grid_tree.configure(yscrollcommand=grid_scrollbar.set)
+        
+        self.grid_tree.pack(side="left", fill="both", expand=True)
+        grid_scrollbar.pack(side="right", fill="y")
+        
+        # Configure row colors
+        self.grid_tree.tag_configure("example", background="#e6f3ff", foreground="#000000")
+        self.grid_tree.tag_configure("user", background="#ffffff", foreground="#000000")
+        self.grid_tree.tag_configure("current", background="#90EE90", foreground="#000000", font=("TkDefaultFont", 9, "bold"))
+        
+        # Bind double-click to load grid
+        self.grid_tree.bind("<Double-1>", self._on_grid_double_click)
+        
+        # Initial refresh
+        self._refresh_grid_list()
+
+    def _refresh_grid_list(self):
+        """Refresh the grid list from database."""
+        # Clear existing items
+        for item in self.grid_tree.get_children():
+            self.grid_tree.delete(item)
+        
+        # Get all grids from database
+        grids = self.db.get_all_grids()
+        
+        for grid_id, name, description, created, modified, is_example in grids:
+            # Format dates
+            try:
+                created_date = datetime.fromisoformat(created).strftime("%Y-%m-%d %H:%M")
+                modified_date = datetime.fromisoformat(modified).strftime("%Y-%m-%d %H:%M")
+            except:
+                created_date = created
+                modified_date = modified
+            
+            grid_type = "Example" if is_example else "User"
+            tag = "example" if is_example else "user"
+            
+            # Check if this is the current grid
+            if self.current_grid_id == grid_id:
+                tag = "current"
+            
+            self.grid_tree.insert(
+                "", "end",
+                values=(grid_id, name, description, grid_type, created_date, modified_date),
+                tags=(tag,)
+            )
+
+    def _save_current_grid(self):
+        """Save the current grid to database."""
+        if self.current_net is None:
+            messagebox.showwarning("Warning", "No grid loaded to save")
+            return
+        
+        # Create save dialog
+        save_dialog = tk.Toplevel(self.root)
+        save_dialog.title("Save Grid")
+        save_dialog.geometry("400x200")
+        save_dialog.transient(self.root)
+        save_dialog.grab_set()
+        
+        # Center the dialog
+        save_dialog.update_idletasks()
+        x = (save_dialog.winfo_screenwidth() // 2) - (400 // 2)
+        y = (save_dialog.winfo_screenheight() // 2) - (200 // 2)
+        save_dialog.geometry(f"400x200+{x}+{y}")
+        
+        ttk.Label(save_dialog, text="Grid Name:").pack(pady=5)
+        name_var = tk.StringVar()
+        name_entry = ttk.Entry(save_dialog, textvariable=name_var, width=40)
+        name_entry.pack(pady=5)
+        
+        ttk.Label(save_dialog, text="Description:").pack(pady=5)
+        desc_var = tk.StringVar()
+        desc_entry = ttk.Entry(save_dialog, textvariable=desc_var, width=40)
+        desc_entry.pack(pady=5)
+        
+        def save_grid():
+            name = name_var.get().strip()
+            if not name:
+                messagebox.showerror("Error", "Grid name is required")
+                return
+            
+            description = desc_var.get().strip()
+            
+            try:
+                grid_id = self.db.save_grid(name, self.current_net, description, False)
+                self.current_grid_id = grid_id
+                self.current_grid_label.config(text=name, foreground="green")
+                save_dialog.destroy()
+                self._refresh_grid_list()
+                messagebox.showinfo("Success", f"Grid '{name}' saved successfully")
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to save grid: {e}")
+        
+        def cancel():
+            save_dialog.destroy()
+        
+        button_frame = ttk.Frame(save_dialog)
+        button_frame.pack(pady=10)
+        ttk.Button(button_frame, text="Save", command=save_grid).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Cancel", command=cancel).pack(side=tk.LEFT, padx=5)
+        
+        name_entry.focus()
+
+    def _load_selected_grid(self):
+        """Load the selected grid from database."""
+        selection = self.grid_tree.selection()
+        if not selection:
+            messagebox.showwarning("Warning", "Please select a grid to load")
+            return
+        
+        # Get selected grid ID
+        item = selection[0]
+        values = self.grid_tree.item(item, "values")
+        grid_id = int(values[0])
+        grid_name = values[1]
+        
+        try:
+            net = self.db.load_grid(grid_id)
+            if net is not None:
+                # Validate and prepare network for power flow
+                try:
+                    # Check for basic network validity
+                    if len(net.bus) == 0:
+                        raise Exception("Network has no buses")
+                    
+                    # Ensure there's at least one slack bus or external grid
+                    has_slack = False
+                    if hasattr(net, 'ext_grid') and not net.ext_grid.empty:
+                        has_slack = True
+                    elif hasattr(net, 'gen') and not net.gen.empty:
+                        has_slack = any(net.gen['slack'])
+                    
+                    if not has_slack:
+                        # Add external grid to first bus as slack
+                        pp.create_ext_grid(net, bus=net.bus.index[0], vm_pu=1.0, name="Auto Slack")
+                        print(f"Added automatic external grid to bus {net.bus.index[0]} for slack reference")
+                    
+                    # Run power flow
+                    pp.runpp(net, verbose=False)
+                    
+                    # Store the network
+                    self.current_net = net
+                    self.current_grid_id = grid_id
+                    self.current_grid_label.config(text=grid_name, foreground="green")
+                    
+                    # Display results
+                    self._display_results(net)
+                    if hasattr(self, '_refresh_edit_tables'):
+                        self._refresh_edit_tables()
+                    self._refresh_grid_list()  # Refresh to highlight current grid
+                    
+                    messagebox.showinfo("Success", f"Grid '{grid_name}' loaded and analyzed successfully")
+                    
+                except pp.LoadflowNotConverged:
+                    # Power flow didn't converge, but still load the network
+                    self.current_net = net
+                    self.current_grid_id = grid_id
+                    self.current_grid_label.config(text=f"{grid_name} (No Conv.)", foreground="orange")
+                    
+                    # Display basic network info without results
+                    self._display_network_info_only(net)
+                    if hasattr(self, '_refresh_edit_tables'):
+                        self._refresh_edit_tables()
+                    self._refresh_grid_list()
+                    
+                    messagebox.showwarning("Warning", f"Grid '{grid_name}' loaded but power flow did not converge.\nCheck network connectivity and generation/load balance.")
+                    
+                except Exception as pf_error:
+                    # Other power flow errors
+                    self.current_net = net
+                    self.current_grid_id = grid_id
+                    self.current_grid_label.config(text=f"{grid_name} (Error)", foreground="red")
+                    
+                    # Display basic network info
+                    self._display_network_info_only(net)
+                    if hasattr(self, '_refresh_edit_tables'):
+                        self._refresh_edit_tables()
+                    self._refresh_grid_list()
+                    
+                    messagebox.showerror("Power Flow Error", f"Grid '{grid_name}' loaded but power flow failed:\n{str(pf_error)}")
+                    
+            else:
+                messagebox.showerror("Error", "Failed to load grid from database")
+                
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to load grid: {e}")
+
+    def _delete_selected_grid(self):
+        """Delete the selected grid from database."""
+        selection = self.grid_tree.selection()
+        if not selection:
+            messagebox.showwarning("Warning", "Please select a grid to delete")
+            return
+        
+        # Get selected grid info
+        item = selection[0]
+        values = self.grid_tree.item(item, "values")
+        grid_id = int(values[0])
+        grid_name = values[1]
+        grid_type = values[3]
+        
+        # Prevent deletion of example grids
+        if grid_type == "Example":
+            messagebox.showwarning("Warning", "Cannot delete example grids")
+            return
+        
+        # Confirm deletion
+        if messagebox.askyesno("Confirm Delete", f"Are you sure you want to delete grid '{grid_name}'?\n\nThis action cannot be undone."):
+            try:
+                if self.db.delete_grid(grid_id):
+                    if self.current_grid_id == grid_id:
+                        self.current_grid_id = None
+                        self.current_grid_label.config(text="None loaded", foreground="red")
+                    self._refresh_grid_list()
+                    messagebox.showinfo("Success", f"Grid '{grid_name}' deleted successfully")
+                else:
+                    messagebox.showerror("Error", "Failed to delete grid")
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to delete grid: {e}")
+
+    def _display_network_info_only(self, net: pp.pandapowerNet) -> None:
+        """Display basic network information without power flow results."""
+        # Clear results tables
+        for item in self.bus_tree.get_children():
+            self.bus_tree.delete(item)
+        for item in self.line_tree.get_children():
+            self.line_tree.delete(item)
+        for item in self.trafo_tree.get_children():
+            self.trafo_tree.delete(item)
+        for item in self.gen_tree.get_children():
+            self.gen_tree.delete(item)
+        
+        # Display bus information without results
+        for idx, row in net.bus.iterrows():
+            bus_name = row.get("name", f"Bus {idx}")
+            vn_kv = row["vn_kv"]
+            self.bus_tree.insert(
+                "", "end",
+                values=(idx, bus_name, vn_kv, "N/A", "N/A", "N/A", "N/A")
+            )
+        
+        # Display line information without results
+        for idx, row in net.line.iterrows():
+            from_bus = int(row["from_bus"])
+            to_bus = int(row["to_bus"])
+            self.line_tree.insert(
+                "", "end",
+                values=(idx, from_bus, to_bus, "N/A", "N/A", "N/A", "N/A", "N/A")
+            )
+        
+        # Display transformer information without results
+        if hasattr(net, 'trafo') and not net.trafo.empty:
+            for idx, row in net.trafo.iterrows():
+                trafo_name = row.get("name", f"Trafo {idx}")
+                hv_bus = int(row["hv_bus"])
+                lv_bus = int(row["lv_bus"])
+                self.trafo_tree.insert(
+                    "", "end",
+                    values=(idx, trafo_name, hv_bus, lv_bus, "N/A", "N/A", "N/A", "N/A", "N/A")
+                )
+        
+        # Display generator information without results
+        if hasattr(net, 'gen') and not net.gen.empty:
+            for idx, row in net.gen.iterrows():
+                gen_name = row.get("name", f"Gen {idx}")
+                bus = int(row["bus"])
+                p_mw = row["p_mw"]
+                vm_pu = row.get("vm_pu", "N/A")
+                is_slack = row.get("slack", False)
+                slack_text = "Yes" if is_slack else "No"
+                self.gen_tree.insert(
+                    "", "end",
+                    values=(idx, gen_name, bus, p_mw, "N/A", vm_pu, "N/A", slack_text)
+                )
+        
+        # Update text output
+        self.text.delete("1.0", tk.END)
+        network_info = f"Network loaded but power flow not calculated\n"
+        network_info += f"Buses: {len(net.bus)}\n"
+        network_info += f"Lines: {len(net.line)}\n"
+        if hasattr(net, 'trafo'):
+            network_info += f"Transformers: {len(net.trafo)}\n"
+        if hasattr(net, 'gen'):
+            network_info += f"Generators: {len(net.gen)}\n"
+        if hasattr(net, 'load'):
+            network_info += f"Loads: {len(net.load)}\n"
+        network_info += "\nNote: Run power flow to see electrical results"
+        self.text.insert(tk.END, network_info)
+
+    def _on_grid_double_click(self, event):
+        """Handle double-click on grid list to load grid."""
+        self._load_selected_grid()
 
 
 def main() -> None:
