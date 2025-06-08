@@ -52,6 +52,13 @@ This is a power grid simulation framework with three main architectural layers:
 - `GridApp`: Tabbed GUI with separate views for input (buses/lines) and results
 - Utility functions in `engine.py`: `element_tables()` for formatted output, `grid_graph()` for NetworkX conversion
 
+**Key Features:**
+- **Power Flow Analysis**: Base case and post-contingency power flow studies
+- **N-1 Contingency Analysis**: Automatic outage simulation for lines, transformers, and generators
+- **Parameter Editing**: Interactive modification of network parameters with immediate analysis
+- **Network Visualization**: Graph-based representation with power flow data
+- **Multiple Test Systems**: 2-bus tutorial, IEEE 9-bus, and IEEE 39-bus New England systems
+
 **Dependencies:**
 - pandapower: Power system analysis engine
 - NetworkX: Graph operations and visualization

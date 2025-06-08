@@ -9,6 +9,7 @@ from engine import GridCalculator, grid_graph, element_tables
 import networkx as nx
 import matplotlib.pyplot as plt
 from examples import create_example_grid, create_ieee_9_bus, create_ieee_39_bus
+from contingency import ContingencyAnalysis
 
 import pandapower as pp
 
@@ -31,11 +32,13 @@ class GridApp:
         self.bus_frame = ttk.Frame(notebook)
         self.line_frame = ttk.Frame(notebook)
         self.edit_frame = ttk.Frame(notebook)
+        self.contingency_frame = ttk.Frame(notebook)
         self.result_frame = ttk.Frame(notebook)
 
         notebook.add(self.bus_frame, text="Buses")
         notebook.add(self.line_frame, text="Lines")
         notebook.add(self.edit_frame, text="Edit Network")
+        notebook.add(self.contingency_frame, text="Contingency Analysis")
         notebook.add(self.result_frame, text="Results")
 
         # Bus inputs
@@ -73,6 +76,9 @@ class GridApp:
 
         # Edit Network tab - Editable tables for network parameters
         self._build_edit_widgets()
+
+        # Contingency Analysis tab
+        self._build_contingency_widgets()
 
         ttk.Button(
             self.result_frame, text="Run Load Flow", command=self.run_powerflow
@@ -311,6 +317,108 @@ class GridApp:
         
         ttk.Button(control_frame, text="Refresh Tables", command=self._refresh_edit_tables).pack(side=tk.LEFT, padx=5)
         ttk.Button(control_frame, text="Apply Changes & Run", command=self._apply_changes_and_run).pack(side=tk.LEFT, padx=5)
+
+    def _build_contingency_widgets(self) -> None:
+        """Build the contingency analysis interface."""
+        # Control panel
+        control_panel = ttk.Frame(self.contingency_frame)
+        control_panel.pack(fill="x", pady=10)
+        
+        ttk.Label(control_panel, text="N-1 Contingency Analysis", font=("Arial", 12, "bold")).pack(pady=5)
+        
+        button_frame = ttk.Frame(control_panel)
+        button_frame.pack()
+        
+        ttk.Button(button_frame, text="Run N-1 Analysis", command=self._run_contingency_analysis).pack(side=tk.LEFT, padx=5)
+        ttk.Button(button_frame, text="Export Results", command=self._export_contingency_results).pack(side=tk.LEFT, padx=5)
+        
+        # Summary panel
+        summary_frame = ttk.LabelFrame(self.contingency_frame, text="Analysis Summary")
+        summary_frame.pack(fill="x", pady=5, padx=10)
+        
+        self.contingency_summary = tk.Text(summary_frame, height=6, width=80)
+        self.contingency_summary.pack(fill="x", pady=5)
+        
+        # Color legend
+        legend_frame = ttk.LabelFrame(self.contingency_frame, text="Severity Color Legend")
+        legend_frame.pack(fill="x", pady=5, padx=10)
+        
+        legend_text = tk.Text(legend_frame, height=3, width=80, state='disabled')
+        legend_text.pack(fill="x", pady=5)
+        
+        # Configure legend text with colors
+        legend_text.config(state='normal')
+        legend_text.insert(tk.END, "Critical", "critical_tag")
+        legend_text.insert(tk.END, " - Non-convergent cases, system instability  ")
+        legend_text.insert(tk.END, "High", "high_tag") 
+        legend_text.insert(tk.END, " - Voltage/loading violations  ")
+        legend_text.insert(tk.END, "Medium", "medium_tag")
+        legend_text.insert(tk.END, " - Near limits\n")
+        legend_text.insert(tk.END, "Low", "low_tag")
+        legend_text.insert(tk.END, " - Safe operation  ")
+        legend_text.insert(tk.END, "Normal", "normal_tag")
+        legend_text.insert(tk.END, " - Base case, no outages")
+        
+        # Configure legend colors
+        legend_text.tag_configure("critical_tag", background="#ff9999", foreground="#000000")
+        legend_text.tag_configure("high_tag", background="#ffcc99", foreground="#000000")
+        legend_text.tag_configure("medium_tag", background="#ffff99", foreground="#000000")
+        legend_text.tag_configure("low_tag", background="#99ff99", foreground="#000000")
+        legend_text.tag_configure("normal_tag", background="#99ccff", foreground="#000000")
+        
+        legend_text.config(state='disabled')
+        
+        # Results table
+        results_frame = ttk.LabelFrame(self.contingency_frame, text="Contingency Results")
+        results_frame.pack(fill="both", expand=True, pady=5, padx=10)
+        
+        # Create contingency results table
+        contingency_columns = ("type", "element", "converged", "max_v", "min_v", "max_line_load", "max_trafo_load", "v_violations", "overloads", "severity")
+        self.contingency_tree = ttk.Treeview(
+            results_frame, columns=contingency_columns, show="headings", height=15
+        )
+        
+        # Configure headers
+        self.contingency_tree.heading("type", text="Type")
+        self.contingency_tree.heading("element", text="Element")
+        self.contingency_tree.heading("converged", text="Converged")
+        self.contingency_tree.heading("max_v", text="Max V (p.u.)")
+        self.contingency_tree.heading("min_v", text="Min V (p.u.)")
+        self.contingency_tree.heading("max_line_load", text="Max Line (%)")
+        self.contingency_tree.heading("max_trafo_load", text="Max Trafo (%)")
+        self.contingency_tree.heading("v_violations", text="V Violations")
+        self.contingency_tree.heading("overloads", text="Overloads")
+        self.contingency_tree.heading("severity", text="Severity")
+        
+        # Configure column widths
+        self.contingency_tree.column("type", width=120, anchor="w")
+        self.contingency_tree.column("element", width=150, anchor="w")
+        self.contingency_tree.column("converged", width=80, anchor="center")
+        self.contingency_tree.column("max_v", width=100, anchor="e")
+        self.contingency_tree.column("min_v", width=100, anchor="e")
+        self.contingency_tree.column("max_line_load", width=100, anchor="e")
+        self.contingency_tree.column("max_trafo_load", width=100, anchor="e")
+        self.contingency_tree.column("v_violations", width=100, anchor="center")
+        self.contingency_tree.column("overloads", width=100, anchor="center")
+        self.contingency_tree.column("severity", width=80, anchor="center")
+        
+        # Add scrollbar
+        scrollbar = ttk.Scrollbar(results_frame, orient="vertical", command=self.contingency_tree.yview)
+        self.contingency_tree.configure(yscrollcommand=scrollbar.set)
+        
+        self.contingency_tree.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        # Configure row colors based on severity with improved visibility
+        self.contingency_tree.tag_configure("Critical", background="#ff9999", foreground="#000000")  # Red
+        self.contingency_tree.tag_configure("High", background="#ffcc99", foreground="#000000")      # Orange
+        self.contingency_tree.tag_configure("Medium", background="#ffff99", foreground="#000000")    # Yellow
+        self.contingency_tree.tag_configure("Low", background="#99ff99", foreground="#000000")       # Green
+        self.contingency_tree.tag_configure("Normal", background="#99ccff", foreground="#000000")    # Blue
+        
+        # Configure alternating row colors for better readability
+        self.contingency_tree.tag_configure("oddrow", background="#f0f0f0")
+        self.contingency_tree.tag_configure("evenrow", background="#ffffff")
 
     def add_bus(self) -> None:
         name = self.bus_name.get()
@@ -767,6 +875,154 @@ class GridApp:
             
         except Exception as e:
             messagebox.showerror("Error", f"Failed to apply changes: {e}")
+
+    def _run_contingency_analysis(self):
+        """Run N-1 contingency analysis on the current network."""
+        if self.current_net is None:
+            messagebox.showinfo("Info", "Load a network first")
+            return
+        
+        try:
+            # Show progress dialog
+            progress_dialog = tk.Toplevel(self.root)
+            progress_dialog.title("Running Contingency Analysis")
+            progress_dialog.geometry("400x100")
+            progress_dialog.transient(self.root)
+            progress_dialog.grab_set()
+            
+            ttk.Label(progress_dialog, text="Running N-1 contingency analysis...").pack(pady=20)
+            progress_bar = ttk.Progressbar(progress_dialog, mode='indeterminate')
+            progress_bar.pack(pady=10)
+            progress_bar.start()
+            
+            # Update GUI to show progress
+            self.root.update()
+            
+            # Run contingency analysis
+            contingency = ContingencyAnalysis(self.current_net)
+            results = contingency.run_n1_analysis()
+            
+            # Close progress dialog
+            progress_dialog.destroy()
+            
+            # Display results
+            self._display_contingency_results(results, contingency)
+            
+            messagebox.showinfo("Success", f"Contingency analysis completed. Analyzed {len(results)} contingencies.")
+            
+        except Exception as e:
+            if 'progress_dialog' in locals():
+                progress_dialog.destroy()
+            messagebox.showerror("Error", f"Contingency analysis failed: {e}")
+
+    def _display_contingency_results(self, results, contingency):
+        """Display contingency analysis results in the GUI."""
+        # Clear previous results
+        for item in self.contingency_tree.get_children():
+            self.contingency_tree.delete(item)
+        
+        # Display summary
+        summary = contingency.get_contingency_summary()
+        summary_text = f"""Analysis Summary:
+Total Contingencies: {summary.get('total_contingencies', 0)}
+Converged Cases: {summary.get('converged_cases', 0)} ({summary.get('convergence_rate', '0%')})
+Security Status: {summary.get('security_status', 'Unknown')}
+
+Severity Breakdown:
+  Critical: {summary.get('critical_contingencies', 0)}
+  High: {summary.get('high_severity', 0)}
+  Medium: {summary.get('medium_severity', 0)}
+  Low: {summary.get('low_severity', 0)}
+"""
+        
+        self.contingency_summary.delete("1.0", tk.END)
+        self.contingency_summary.insert(tk.END, summary_text)
+        
+        # Display detailed results with improved formatting and color coding
+        for i, result in enumerate(results):
+            converged = "Yes" if result['converged'] else "No"
+            
+            if result['converged']:
+                max_v = f"{result.get('max_voltage_pu', 0):.3f}"
+                min_v = f"{result.get('min_voltage_pu', 0):.3f}"
+                max_line = f"{result.get('max_line_loading', 0):.1f}"
+                max_trafo = f"{result.get('max_trafo_loading', 0):.1f}"
+                v_violations = str(result.get('voltage_violations', 0))
+                overloads = str(result.get('overload_violations', 0))
+            else:
+                max_v = min_v = max_line = max_trafo = v_violations = overloads = "N/A"
+            
+            severity = result['severity']
+            
+            # Determine primary tag for color coding based on severity
+            if severity == 'Critical':
+                primary_tag = 'Critical'
+            elif severity == 'High':
+                primary_tag = 'High'
+            elif severity == 'Medium':
+                primary_tag = 'Medium'
+            elif severity == 'Low':
+                primary_tag = 'Low'
+            else:
+                primary_tag = 'Normal'
+            
+            # Add alternating row colors as secondary tag for non-critical cases
+            if severity in ['Normal', 'Low']:
+                secondary_tag = 'oddrow' if i % 2 else 'evenrow'
+                tags = (secondary_tag, primary_tag)
+            else:
+                tags = (primary_tag,)
+            
+            item = self.contingency_tree.insert(
+                "", "end",
+                values=(
+                    result['contingency_type'],
+                    result['element_name'],
+                    converged,
+                    max_v,
+                    min_v,
+                    max_line,
+                    max_trafo,
+                    v_violations,
+                    overloads,
+                    severity
+                ),
+                tags=tags
+            )
+
+    def _export_contingency_results(self):
+        """Export contingency results to CSV file."""
+        if not hasattr(self, 'contingency_tree') or not self.contingency_tree.get_children():
+            messagebox.showinfo("Info", "No contingency results to export")
+            return
+        
+        try:
+            from tkinter import filedialog
+            filename = filedialog.asksaveasfilename(
+                title="Export Contingency Results",
+                defaultextension=".csv",
+                filetypes=[("CSV files", "*.csv"), ("All files", "*.*")]
+            )
+            
+            if filename:
+                import csv
+                with open(filename, 'w', newline='') as csvfile:
+                    writer = csv.writer(csvfile)
+                    
+                    # Write header
+                    headers = ["Type", "Element", "Converged", "Max V (p.u.)", "Min V (p.u.)", 
+                              "Max Line (%)", "Max Trafo (%)", "V Violations", "Overloads", "Severity"]
+                    writer.writerow(headers)
+                    
+                    # Write data
+                    for item in self.contingency_tree.get_children():
+                        values = self.contingency_tree.item(item, "values")
+                        writer.writerow(values)
+                
+                messagebox.showinfo("Success", f"Results exported to {filename}")
+        
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to export results: {e}")
 
 
 def main() -> None:
