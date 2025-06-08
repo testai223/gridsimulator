@@ -145,13 +145,15 @@ class GridApp:
         self.bus_tree.pack(fill="both", expand=True, pady=5)
 
         # Table for line power flows
-        line_columns = ("line", "from_bus", "to_bus", "p_from_mw", "q_from_mvar", "i_from_ka", "p_to_mw", "q_to_mvar", "i_to_ka", "loading_percent")
+        line_columns = ("line", "name", "from_bus", "to_bus", "vn_kv", "p_from_mw", "q_from_mvar", "i_from_ka", "p_to_mw", "q_to_mvar", "i_to_ka", "loading_percent")
         self.line_tree = ttk.Treeview(
             self.result_frame, columns=line_columns, show="headings", height=8
         )
         self.line_tree.heading("line", text="Line ID")
+        self.line_tree.heading("name", text="Name")
         self.line_tree.heading("from_bus", text="From")
         self.line_tree.heading("to_bus", text="To")
+        self.line_tree.heading("vn_kv", text="Vn (kV)")
         self.line_tree.heading("p_from_mw", text="P from (MW)")
         self.line_tree.heading("q_from_mvar", text="Q from (Mvar)")
         self.line_tree.heading("i_from_ka", text="I from (kA)")
@@ -161,21 +163,23 @@ class GridApp:
         self.line_tree.heading("loading_percent", text="Loading (%)")
         
         # Configure column widths and alignment
-        self.line_tree.column("line", width=60, anchor="center")
-        self.line_tree.column("from_bus", width=60, anchor="center")
-        self.line_tree.column("to_bus", width=60, anchor="center")
-        self.line_tree.column("p_from_mw", width=85, anchor="e")
-        self.line_tree.column("q_from_mvar", width=85, anchor="e")
-        self.line_tree.column("i_from_ka", width=80, anchor="e")
-        self.line_tree.column("p_to_mw", width=85, anchor="e")
-        self.line_tree.column("q_to_mvar", width=85, anchor="e")
-        self.line_tree.column("i_to_ka", width=80, anchor="e")
-        self.line_tree.column("loading_percent", width=90, anchor="e")
+        self.line_tree.column("line", width=50, anchor="center")
+        self.line_tree.column("name", width=90, anchor="w")
+        self.line_tree.column("from_bus", width=50, anchor="center")
+        self.line_tree.column("to_bus", width=50, anchor="center")
+        self.line_tree.column("vn_kv", width=70, anchor="e")
+        self.line_tree.column("p_from_mw", width=80, anchor="e")
+        self.line_tree.column("q_from_mvar", width=80, anchor="e")
+        self.line_tree.column("i_from_ka", width=75, anchor="e")
+        self.line_tree.column("p_to_mw", width=80, anchor="e")
+        self.line_tree.column("q_to_mvar", width=80, anchor="e")
+        self.line_tree.column("i_to_ka", width=75, anchor="e")
+        self.line_tree.column("loading_percent", width=85, anchor="e")
         
         self.line_tree.pack(fill="both", expand=True, pady=5)
 
         # Table for transformer power flows
-        trafo_columns = ("trafo", "name", "hv_bus", "lv_bus", "p_hv_mw", "q_hv_mvar", "i_hv_ka", "p_lv_mw", "q_lv_mvar", "i_lv_ka", "loading_percent")
+        trafo_columns = ("trafo", "name", "hv_bus", "lv_bus", "vn_hv_kv", "vn_lv_kv", "p_hv_mw", "q_hv_mvar", "i_hv_ka", "p_lv_mw", "q_lv_mvar", "i_lv_ka", "loading_percent")
         self.trafo_tree = ttk.Treeview(
             self.result_frame, columns=trafo_columns, show="headings", height=8
         )
@@ -183,6 +187,8 @@ class GridApp:
         self.trafo_tree.heading("name", text="Name")
         self.trafo_tree.heading("hv_bus", text="HV Bus")
         self.trafo_tree.heading("lv_bus", text="LV Bus")
+        self.trafo_tree.heading("vn_hv_kv", text="HV kV")
+        self.trafo_tree.heading("vn_lv_kv", text="LV kV")
         self.trafo_tree.heading("p_hv_mw", text="P HV (MW)")
         self.trafo_tree.heading("q_hv_mvar", text="Q HV (Mvar)")
         self.trafo_tree.heading("i_hv_ka", text="I HV (kA)")
@@ -192,17 +198,19 @@ class GridApp:
         self.trafo_tree.heading("loading_percent", text="Loading (%)")
         
         # Configure column widths and alignment
-        self.trafo_tree.column("trafo", width=60, anchor="center")
-        self.trafo_tree.column("name", width=70, anchor="w")
-        self.trafo_tree.column("hv_bus", width=60, anchor="center")
-        self.trafo_tree.column("lv_bus", width=60, anchor="center")
-        self.trafo_tree.column("p_hv_mw", width=80, anchor="e")
-        self.trafo_tree.column("q_hv_mvar", width=80, anchor="e")
-        self.trafo_tree.column("i_hv_ka", width=75, anchor="e")
-        self.trafo_tree.column("p_lv_mw", width=80, anchor="e")
-        self.trafo_tree.column("q_lv_mvar", width=80, anchor="e")
-        self.trafo_tree.column("i_lv_ka", width=75, anchor="e")
-        self.trafo_tree.column("loading_percent", width=90, anchor="e")
+        self.trafo_tree.column("trafo", width=50, anchor="center")
+        self.trafo_tree.column("name", width=60, anchor="w")
+        self.trafo_tree.column("hv_bus", width=50, anchor="center")
+        self.trafo_tree.column("lv_bus", width=50, anchor="center")
+        self.trafo_tree.column("vn_hv_kv", width=60, anchor="e")
+        self.trafo_tree.column("vn_lv_kv", width=60, anchor="e")
+        self.trafo_tree.column("p_hv_mw", width=75, anchor="e")
+        self.trafo_tree.column("q_hv_mvar", width=75, anchor="e")
+        self.trafo_tree.column("i_hv_ka", width=70, anchor="e")
+        self.trafo_tree.column("p_lv_mw", width=75, anchor="e")
+        self.trafo_tree.column("q_lv_mvar", width=75, anchor="e")
+        self.trafo_tree.column("i_lv_ka", width=70, anchor="e")
+        self.trafo_tree.column("loading_percent", width=85, anchor="e")
         
         self.trafo_tree.pack(fill="both", expand=True, pady=5)
 
@@ -739,11 +747,19 @@ class GridApp:
                     # Get line input data
                     if idx in net.line.index:
                         line_data = net.line.loc[idx]
+                        line_name = line_data.get("name", f"Line {idx}")
                         from_bus = int(line_data["from_bus"])
                         to_bus = int(line_data["to_bus"])
+                        # Get voltage level from the from_bus
+                        if from_bus in net.bus.index:
+                            vn_kv = net.bus.loc[from_bus, "vn_kv"]
+                        else:
+                            vn_kv = 0.0
                     else:
+                        line_name = f"Line {idx}"
                         from_bus = 0
                         to_bus = 0
+                        vn_kv = 0.0
                     
                     # Get result data with safe access
                     p_from_mw = round(float(row.get("p_from_mw", 0.0)), 3)
@@ -757,7 +773,7 @@ class GridApp:
                     self.line_tree.insert(
                         "",
                         "end",
-                        values=(idx, from_bus, to_bus, p_from_mw, q_from_mvar, i_from_ka, p_to_mw, q_to_mvar, i_to_ka, loading_percent),
+                        values=(idx, line_name, from_bus, to_bus, vn_kv, p_from_mw, q_from_mvar, i_from_ka, p_to_mw, q_to_mvar, i_to_ka, loading_percent),
                     )
                 except Exception as e:
                     print(f"Error displaying line {idx}: {e}")
@@ -776,10 +792,14 @@ class GridApp:
                         trafo_name = trafo_data.get("name", f"Trafo {idx}")
                         hv_bus = int(trafo_data["hv_bus"])
                         lv_bus = int(trafo_data["lv_bus"])
+                        vn_hv_kv = trafo_data.get("vn_hv_kv", 0.0)
+                        vn_lv_kv = trafo_data.get("vn_lv_kv", 0.0)
                     else:
                         trafo_name = f"Trafo {idx}"
                         hv_bus = 0
                         lv_bus = 0
+                        vn_hv_kv = 0.0
+                        vn_lv_kv = 0.0
                     
                     # Get result data with safe access
                     p_hv_mw = round(float(row.get("p_hv_mw", 0.0)), 3)
@@ -793,7 +813,7 @@ class GridApp:
                     self.trafo_tree.insert(
                         "",
                         "end",
-                        values=(idx, trafo_name, hv_bus, lv_bus, p_hv_mw, q_hv_mvar, i_hv_ka, p_lv_mw, q_lv_mvar, i_lv_ka, loading_percent),
+                        values=(idx, trafo_name, hv_bus, lv_bus, vn_hv_kv, vn_lv_kv, p_hv_mw, q_hv_mvar, i_hv_ka, p_lv_mw, q_lv_mvar, i_lv_ka, loading_percent),
                     )
                 except Exception as e:
                     print(f"Error displaying transformer {idx}: {e}")
@@ -1745,11 +1765,17 @@ Severity Breakdown:
         
         # Display line information without results
         for idx, row in net.line.iterrows():
+            line_name = row.get("name", f"Line {idx}")
             from_bus = int(row["from_bus"])
             to_bus = int(row["to_bus"])
+            # Get voltage level from the from_bus
+            if from_bus in net.bus.index:
+                vn_kv = net.bus.loc[from_bus, "vn_kv"]
+            else:
+                vn_kv = 0.0
             self.line_tree.insert(
                 "", "end",
-                values=(idx, from_bus, to_bus, "N/A", "N/A", "N/A", "N/A", "N/A", "N/A", "N/A")
+                values=(idx, line_name, from_bus, to_bus, vn_kv, "N/A", "N/A", "N/A", "N/A", "N/A", "N/A", "N/A")
             )
         
         # Display transformer information without results
@@ -1758,9 +1784,11 @@ Severity Breakdown:
                 trafo_name = row.get("name", f"Trafo {idx}")
                 hv_bus = int(row["hv_bus"])
                 lv_bus = int(row["lv_bus"])
+                vn_hv_kv = row.get("vn_hv_kv", 0.0)
+                vn_lv_kv = row.get("vn_lv_kv", 0.0)
                 self.trafo_tree.insert(
                     "", "end",
-                    values=(idx, trafo_name, hv_bus, lv_bus, "N/A", "N/A", "N/A", "N/A", "N/A", "N/A", "N/A")
+                    values=(idx, trafo_name, hv_bus, lv_bus, vn_hv_kv, vn_lv_kv, "N/A", "N/A", "N/A", "N/A", "N/A", "N/A", "N/A")
                 )
         
         # Display generator information without results
