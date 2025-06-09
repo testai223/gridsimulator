@@ -218,30 +218,48 @@ class GridDatabase:
 
     def initialize_example_grids(self):
         """Initialize the database with example grids if they don't exist."""
-        from examples import create_example_grid, create_ieee_9_bus, create_ieee_39_bus
+        from examples import create_example_grid, create_ieee_9_bus, create_ieee_39_bus, create_ieee_39_bus_standard
         
         # Check if example grids already exist
         cur = self.conn.cursor()
-        cur.execute("SELECT COUNT(*) FROM grids WHERE is_example = 1")
-        if cur.fetchone()[0] > 0:
-            return  # Examples already exist
         
-        # Add example grids
+        # Check for each specific example to avoid duplicates
+        example_names = [
+            "Simple Example Grid",
+            "IEEE 9-Bus Test System", 
+            "IEEE 39-Bus New England System",
+            "IEEE 39-Bus Standard (MATPOWER)"
+        ]
+        
+        # Add example grids if they don't exist
         try:
             # Simple example grid
-            example_net = create_example_grid()
-            self.save_grid("Simple Example Grid", example_net, 
-                          "Basic 2-bus system with generator and load", True)
+            cur.execute("SELECT COUNT(*) FROM grids WHERE name = ? AND is_example = 1", ("Simple Example Grid",))
+            if cur.fetchone()[0] == 0:
+                example_net = create_example_grid()
+                self.save_grid("Simple Example Grid", example_net, 
+                              "Basic 2-bus system with generator and load", True)
             
             # IEEE 9-bus system
-            ieee9_net = create_ieee_9_bus()
-            self.save_grid("IEEE 9-Bus Test System", ieee9_net,
-                          "Standard IEEE 9-bus reliability test system", True)
+            cur.execute("SELECT COUNT(*) FROM grids WHERE name = ? AND is_example = 1", ("IEEE 9-Bus Test System",))
+            if cur.fetchone()[0] == 0:
+                ieee9_net = create_ieee_9_bus()
+                self.save_grid("IEEE 9-Bus Test System", ieee9_net,
+                              "Standard IEEE 9-bus reliability test system", True)
             
             # IEEE 39-bus system  
-            ieee39_net = create_ieee_39_bus()
-            self.save_grid("IEEE 39-Bus New England System", ieee39_net,
-                          "IEEE 39-bus New England test system for large-scale analysis", True)
+            cur.execute("SELECT COUNT(*) FROM grids WHERE name = ? AND is_example = 1", ("IEEE 39-Bus New England System",))
+            if cur.fetchone()[0] == 0:
+                ieee39_net = create_ieee_39_bus()
+                self.save_grid("IEEE 39-Bus New England System", ieee39_net,
+                              "IEEE 39-bus New England test system for large-scale analysis", True)
+            
+            # IEEE 39-bus standard system
+            cur.execute("SELECT COUNT(*) FROM grids WHERE name = ? AND is_example = 1", ("IEEE 39-Bus Standard (MATPOWER)",))
+            if cur.fetchone()[0] == 0:
+                ieee39std_net = create_ieee_39_bus_standard()
+                self.save_grid("IEEE 39-Bus Standard (MATPOWER)", ieee39std_net,
+                              "Standard IEEE 39-bus system based on MATPOWER case39", True)
                           
         except Exception as e:
             print(f"Warning: Could not initialize example grids: {e}")

@@ -48,7 +48,7 @@ class ContingencyAnalysis:
             net = copy.deepcopy(self.base_net)
             pp.runpp(net)
             
-            return {
+            result = {
                 'contingency_type': 'Base Case',
                 'element_id': None,
                 'element_name': 'No outages',
@@ -60,9 +60,11 @@ class ContingencyAnalysis:
                 'total_generation_mw': float(net.res_gen['p_mw'].sum()) if hasattr(net, 'res_gen') and not net.res_gen.empty else 0.0,
                 'total_load_mw': float(net.load['p_mw'].sum()) if hasattr(net, 'load') and not net.load.empty else 0.0,
                 'voltage_violations': self._count_voltage_violations(net),
-                'overload_violations': self._count_overload_violations(net),
-                'severity': 'Normal'
+                'overload_violations': self._count_overload_violations(net)
             }
+            
+            # Assess severity for base case
+            result['severity'] = self._assess_severity(result)
             
             # Collect detailed violations if any exist for base case
             if result['voltage_violations'] > 0 or result['overload_violations'] > 0:

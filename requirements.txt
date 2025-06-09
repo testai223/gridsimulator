@@ -2,3 +2,6 @@ pandapower
 pandas
 networkx
 matplotlib
+tabulate
+openpyxl
+numpy

@@ -8,7 +8,7 @@ from database import GridDatabase
 from engine import GridCalculator, grid_graph, element_tables
 import networkx as nx
 import matplotlib.pyplot as plt
-from examples import create_example_grid, create_ieee_9_bus, create_ieee_39_bus
+from examples import create_example_grid, create_ieee_9_bus, create_ieee_39_bus, create_ieee_39_bus_standard
 from contingency import ContingencyAnalysis
 
 import pandapower as pp
@@ -118,6 +118,9 @@ class GridApp:
         ).pack(side=tk.LEFT, padx=5)
         ttk.Button(
             example_frame, text="IEEE 39-Bus", command=self.run_ieee_39_bus
+        ).pack(side=tk.LEFT, padx=5)
+        ttk.Button(
+            example_frame, text="IEEE 39-Bus Std", command=self.run_ieee_39_bus_standard
         ).pack(side=tk.LEFT, padx=5)
 
         # Table for bus voltages
@@ -693,6 +696,18 @@ class GridApp:
             self.current_net = net
             self.current_grid_id = None  # Not saved yet
             self.current_grid_label.config(text="IEEE 39-Bus (unsaved)", foreground="orange")
+        except Exception as exc:  # broad except to show message
+            messagebox.showerror("Error", str(exc))
+            return
+        self._display_results(net)
+
+    def run_ieee_39_bus_standard(self) -> None:
+        try:
+            net = create_ieee_39_bus_standard()
+            pp.runpp(net)
+            self.current_net = net
+            self.current_grid_id = None  # Not saved yet
+            self.current_grid_label.config(text="IEEE 39-Bus Standard (unsaved)", foreground="orange")
         except Exception as exc:  # broad except to show message
             messagebox.showerror("Error", str(exc))
             return
