@@ -77,22 +77,34 @@ def element_tables(net: pp.pandapowerNet) -> str:
 
 
 def grid_graph(net: pp.pandapowerNet):
-    """Return a NetworkX graph representation of the buses and lines in *net*."""
+    """Return a NetworkX graph representation of the buses, lines, and transformers in *net*."""
     import networkx as nx
 
     g = nx.Graph()
+    
+    # Add all buses as nodes
     for idx, row in net.bus.iterrows():
         attrs = {"name": row.get("name", str(idx))}
         if hasattr(net, "res_bus") and idx in net.res_bus.index:
             attrs["vm_pu"] = float(net.res_bus.loc[idx, "vm_pu"])
         g.add_node(int(idx), **attrs)
 
+    # Add lines as edges
     for idx, row in net.line.iterrows():
-        attrs = {"id": int(idx)}
+        attrs = {"id": int(idx), "type": "line"}
         if hasattr(net, "res_line") and idx in net.res_line.index:
             attrs["p_from_mw"] = float(net.res_line.loc[idx, "p_from_mw"])
             attrs["p_to_mw"] = float(net.res_line.loc[idx, "p_to_mw"])
         g.add_edge(int(row["from_bus"]), int(row["to_bus"]), **attrs)
+
+    # Add transformers as edges
+    if hasattr(net, "trafo") and not net.trafo.empty:
+        for idx, row in net.trafo.iterrows():
+            attrs = {"id": int(idx), "type": "transformer"}
+            if hasattr(net, "res_trafo") and idx in net.res_trafo.index:
+                attrs["p_hv_mw"] = float(net.res_trafo.loc[idx, "p_hv_mw"])
+                attrs["p_lv_mw"] = float(net.res_trafo.loc[idx, "p_lv_mw"])
+            g.add_edge(int(row["hv_bus"]), int(row["lv_bus"]), **attrs)
 
     return g
 
