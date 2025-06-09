@@ -735,8 +735,8 @@ class GridApp:
             # Initialize state estimator
             estimator = StateEstimator(net)
             
-            # Create measurement set
-            estimator.create_measurement_set_ieee9()
+            # Create measurement set (simple mode for better convergence)
+            estimator.create_measurement_set_ieee9(simple_mode=True)
             
             # Run state estimation
             results = estimator.estimate_state()

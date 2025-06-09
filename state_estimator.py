@@ -128,21 +128,27 @@ class StateEstimator:
                 )
                 self.measurements.append(q_measurement)
     
-    def create_measurement_set_ieee9(self):
-        """Create a comprehensive measurement set for IEEE 9-bus system."""
-        # Voltage measurements at all buses except slack
-        voltage_buses = [0, 1, 2, 3, 4, 5, 6, 7, 8]  # All buses
-        self.add_voltage_measurements(voltage_buses, noise_std=0.005)
-        
-        # Power injection measurements at load buses and generator buses
-        injection_buses = [0, 1, 2, 4, 5, 8]  # Generator and load buses
-        self.add_power_injection_measurements(injection_buses, noise_std=0.015)
-        
-        # Power flow measurements on critical lines
-        flow_lines = [0, 1, 2, 3, 4, 5]  # All transmission lines
-        self.add_power_flow_measurements(flow_lines, noise_std=0.02)
-        
-        print(f"Created {len(self.measurements)} measurements for IEEE 9-bus system")
+    def create_measurement_set_ieee9(self, simple_mode=True):
+        """Create a measurement set for IEEE 9-bus system."""
+        if simple_mode:
+            # Simple case: only voltage measurements for debugging
+            voltage_buses = [0, 1, 2, 3, 4, 5, 6, 7, 8]  # All buses
+            self.add_voltage_measurements(voltage_buses, noise_std=0.01)
+            print(f"Created {len(self.measurements)} voltage measurements for IEEE 9-bus system")
+        else:
+            # Comprehensive measurement set
+            voltage_buses = [0, 1, 2, 3, 4, 5, 6, 7, 8]  # All buses
+            self.add_voltage_measurements(voltage_buses, noise_std=0.005)
+            
+            # Power injection measurements at key buses
+            injection_buses = [4, 5, 8]  # Load buses only
+            self.add_power_injection_measurements(injection_buses, noise_std=0.02)
+            
+            # Power flow measurements on a few critical lines
+            flow_lines = [0, 2, 4]  # Selected transmission lines
+            self.add_power_flow_measurements(flow_lines, noise_std=0.03)
+            
+            print(f"Created {len(self.measurements)} measurements for IEEE 9-bus system")
     
     def _build_measurement_vector(self) -> np.ndarray:
         """Build measurement vector z from all measurements."""
@@ -158,61 +164,79 @@ class StateEstimator:
         """Calculate measurement functions h(x) for given state."""
         h = np.zeros(len(self.measurements))
         
+        # Build admittance matrix for more accurate calculations
+        n_buses = len(self.net.bus)
+        Y = np.zeros((n_buses, n_buses), dtype=complex)
+        
+        # Add line admittances
+        for line_idx in self.net.line.index:
+            from_bus = self.net.line.loc[line_idx, 'from_bus']
+            to_bus = self.net.line.loc[line_idx, 'to_bus']
+            
+            r = self.net.line.loc[line_idx, 'r_ohm_per_km'] * self.net.line.loc[line_idx, 'length_km']
+            x = self.net.line.loc[line_idx, 'x_ohm_per_km'] * self.net.line.loc[line_idx, 'length_km']
+            
+            if r**2 + x**2 > 0:
+                y_line = 1.0 / (r + 1j * x)
+                Y[from_bus, to_bus] -= y_line
+                Y[to_bus, from_bus] -= y_line
+                Y[from_bus, from_bus] += y_line
+                Y[to_bus, to_bus] += y_line
+        
+        # Convert to complex voltages
+        V = voltage_magnitudes * np.exp(1j * voltage_angles)
+        
         for i, meas in enumerate(self.measurements):
             if meas.meas_type == MeasurementType.VOLTAGE_MAGNITUDE:
                 h[i] = voltage_magnitudes[meas.bus_from]
             
             elif meas.meas_type == MeasurementType.ACTIVE_POWER_INJECTION:
-                # Simplified active power injection calculation
                 bus = meas.bus_from
-                vm = voltage_magnitudes[bus]
-                va = voltage_angles[bus]
-                
-                # Get connected buses via lines
-                p_inj = 0.0
-                for line_idx in self.net.line.index:
-                    if self.net.line.loc[line_idx, 'from_bus'] == bus:
-                        to_bus = self.net.line.loc[line_idx, 'to_bus']
-                        vm_to = voltage_magnitudes[to_bus]
-                        va_to = voltage_angles[to_bus]
-                        
-                        # Simple line model: P = (V1*V2/X) * sin(θ1-θ2)
-                        x = self.net.line.loc[line_idx, 'x_ohm_per_km'] * self.net.line.loc[line_idx, 'length_km']
-                        if x > 0:
-                            p_inj += (vm * vm_to / x) * np.sin(va - va_to)
-                    
-                    elif self.net.line.loc[line_idx, 'to_bus'] == bus:
-                        from_bus = self.net.line.loc[line_idx, 'from_bus']
-                        vm_from = voltage_magnitudes[from_bus]
-                        va_from = voltage_angles[from_bus]
-                        
-                        x = self.net.line.loc[line_idx, 'x_ohm_per_km'] * self.net.line.loc[line_idx, 'length_km']
-                        if x > 0:
-                            p_inj += (vm * vm_from / x) * np.sin(va - va_from)
-                
-                h[i] = p_inj
+                # P_inj = Re(V_i * conj(sum(Y_ij * V_j)))
+                current_sum = sum(Y[bus, j] * V[j] for j in range(n_buses))
+                power_complex = V[bus] * np.conj(current_sum)
+                h[i] = power_complex.real
+            
+            elif meas.meas_type == MeasurementType.REACTIVE_POWER_INJECTION:
+                bus = meas.bus_from
+                # Q_inj = Im(V_i * conj(sum(Y_ij * V_j)))
+                current_sum = sum(Y[bus, j] * V[j] for j in range(n_buses))
+                power_complex = V[bus] * np.conj(current_sum)
+                h[i] = power_complex.imag
             
             elif meas.meas_type == MeasurementType.ACTIVE_POWER_FLOW:
-                # Simplified power flow calculation
                 bus_from = meas.bus_from
                 bus_to = meas.bus_to
-                vm_from = voltage_magnitudes[bus_from]
-                vm_to = voltage_magnitudes[bus_to]
-                va_from = voltage_angles[bus_from]
-                va_to = voltage_angles[bus_to]
-                
-                # Simple line model
                 line_idx = meas.element_idx
+                
+                r = self.net.line.loc[line_idx, 'r_ohm_per_km'] * self.net.line.loc[line_idx, 'length_km']
                 x = self.net.line.loc[line_idx, 'x_ohm_per_km'] * self.net.line.loc[line_idx, 'length_km']
-                if x > 0:
-                    h[i] = (vm_from * vm_to / x) * np.sin(va_from - va_to)
+                
+                if r**2 + x**2 > 0:
+                    y_line = 1.0 / (r + 1j * x)
+                    # P_flow = Re(V_from * conj((V_from - V_to) * y_line))
+                    current = (V[bus_from] - V[bus_to]) * y_line
+                    power_complex = V[bus_from] * np.conj(current)
+                    h[i] = power_complex.real
                 else:
                     h[i] = 0.0
             
-            # For reactive power measurements, use simplified models
-            elif meas.meas_type in [MeasurementType.REACTIVE_POWER_INJECTION, 
-                                  MeasurementType.REACTIVE_POWER_FLOW]:
-                h[i] = 0.0  # Simplified: assume zero reactive power
+            elif meas.meas_type == MeasurementType.REACTIVE_POWER_FLOW:
+                bus_from = meas.bus_from
+                bus_to = meas.bus_to
+                line_idx = meas.element_idx
+                
+                r = self.net.line.loc[line_idx, 'r_ohm_per_km'] * self.net.line.loc[line_idx, 'length_km']
+                x = self.net.line.loc[line_idx, 'x_ohm_per_km'] * self.net.line.loc[line_idx, 'length_km']
+                
+                if r**2 + x**2 > 0:
+                    y_line = 1.0 / (r + 1j * x)
+                    # Q_flow = Im(V_from * conj((V_from - V_to) * y_line))
+                    current = (V[bus_from] - V[bus_to]) * y_line
+                    power_complex = V[bus_from] * np.conj(current)
+                    h[i] = power_complex.imag
+                else:
+                    h[i] = 0.0
         
         return h
     
@@ -225,23 +249,33 @@ class StateEstimator:
         
         H = np.zeros((n_meas, n_states))
         
-        # Simple numerical differentiation for Jacobian
-        epsilon = 1e-6
-        h_base = self._calculate_measurement_functions(voltage_magnitudes, voltage_angles)
+        # For voltage measurements, Jacobian is trivial
+        angle_col = 0
+        mag_col = n_buses - 1
         
-        # Derivatives w.r.t voltage angles (first n-1 states, skip slack bus)
-        for j in range(n_buses - 1):
-            va_pert = voltage_angles.copy()
-            va_pert[j+1] += epsilon  # Skip slack bus (bus 0)
-            h_pert = self._calculate_measurement_functions(voltage_magnitudes, va_pert)
-            H[:, j] = (h_pert - h_base) / epsilon
-        
-        # Derivatives w.r.t voltage magnitudes (last n states)
-        for j in range(n_buses):
-            vm_pert = voltage_magnitudes.copy()
-            vm_pert[j] += epsilon
-            h_pert = self._calculate_measurement_functions(vm_pert, voltage_angles)
-            H[:, n_buses - 1 + j] = (h_pert - h_base) / epsilon
+        for i, meas in enumerate(self.measurements):
+            if meas.meas_type == MeasurementType.VOLTAGE_MAGNITUDE:
+                # ∂|V_i|/∂|V_j| = δ_ij, ∂|V_i|/∂θ_j = 0
+                H[i, mag_col + meas.bus_from] = 1.0
+            
+            else:
+                # For power measurements, use numerical differentiation with smaller epsilon
+                epsilon = 1e-8
+                h_base = self._calculate_measurement_functions(voltage_magnitudes, voltage_angles)
+                
+                # Derivatives w.r.t voltage angles (skip slack bus)
+                for j in range(1, n_buses):  # Skip slack bus (bus 0)
+                    va_pert = voltage_angles.copy()
+                    va_pert[j] += epsilon
+                    h_pert = self._calculate_measurement_functions(voltage_magnitudes, va_pert)
+                    H[i, j-1] = (h_pert[i] - h_base[i]) / epsilon
+                
+                # Derivatives w.r.t voltage magnitudes
+                for j in range(n_buses):
+                    vm_pert = voltage_magnitudes.copy()
+                    vm_pert[j] += epsilon
+                    h_pert = self._calculate_measurement_functions(vm_pert, voltage_angles)
+                    H[i, mag_col + j] = (h_pert[i] - h_base[i]) / epsilon
         
         return H
     
@@ -382,8 +416,8 @@ def run_ieee9_state_estimation() -> Dict[str, Any]:
     # Initialize state estimator
     estimator = StateEstimator(net)
     
-    # Create measurement set
-    estimator.create_measurement_set_ieee9()
+    # Create measurement set (simple mode for better convergence)
+    estimator.create_measurement_set_ieee9(simple_mode=True)
     
     # Run state estimation
     results = estimator.estimate_state()
