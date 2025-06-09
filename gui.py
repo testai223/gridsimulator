@@ -10,6 +10,7 @@ import networkx as nx
 import matplotlib.pyplot as plt
 from examples import create_example_grid, create_ieee_9_bus, create_ieee_39_bus, create_ieee_39_bus_standard
 from contingency import ContingencyAnalysis
+from state_estimator import StateEstimator, run_ieee9_state_estimation
 
 import pandapower as pp
 from datetime import datetime
@@ -121,6 +122,18 @@ class GridApp:
         ).pack(side=tk.LEFT, padx=5)
         ttk.Button(
             example_frame, text="IEEE 39-Bus Std", command=self.run_ieee_39_bus_standard
+        ).pack(side=tk.LEFT, padx=5)
+
+        # Separator
+        ttk.Separator(self.result_frame, orient='horizontal').pack(fill='x', pady=10)
+        
+        # State Estimator section
+        ttk.Label(self.result_frame, text="State Estimation:", font=("Arial", 10, "bold")).pack()
+        estimator_frame = ttk.Frame(self.result_frame)
+        estimator_frame.pack(fill="x", pady=5)
+        
+        ttk.Button(
+            estimator_frame, text="Run State Estimator (IEEE 9-Bus)", command=self.run_state_estimator
         ).pack(side=tk.LEFT, padx=5)
 
         # Table for bus voltages
@@ -712,6 +725,117 @@ class GridApp:
             messagebox.showerror("Error", str(exc))
             return
         self._display_results(net)
+
+    def run_state_estimator(self) -> None:
+        """Run state estimation on IEEE 9-bus system and display results."""
+        try:
+            # Create IEEE 9-bus system
+            net = create_ieee_9_bus()
+            
+            # Initialize state estimator
+            estimator = StateEstimator(net)
+            
+            # Create measurement set
+            estimator.create_measurement_set_ieee9()
+            
+            # Run state estimation
+            results = estimator.estimate_state()
+            
+            # Create results window
+            self._show_state_estimation_results(estimator, results)
+            
+        except Exception as exc:
+            messagebox.showerror("State Estimation Error", f"Error running state estimation: {str(exc)}")
+
+    def _show_state_estimation_results(self, estimator: StateEstimator, results: dict) -> None:
+        """Display state estimation results in a new window."""
+        # Create new window
+        results_window = tk.Toplevel(self.root)
+        results_window.title("State Estimation Results - IEEE 9-Bus")
+        results_window.geometry("900x700")
+        
+        # Create notebook for different result views
+        notebook = ttk.Notebook(results_window)
+        notebook.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        # Summary tab
+        summary_frame = ttk.Frame(notebook)
+        notebook.add(summary_frame, text="Summary")
+        
+        summary_text = tk.Text(summary_frame, wrap=tk.WORD, font=("Courier", 10))
+        summary_scroll = ttk.Scrollbar(summary_frame, orient="vertical", command=summary_text.yview)
+        summary_text.configure(yscrollcommand=summary_scroll.set)
+        
+        # Add summary information
+        summary_info = f"""State Estimation Results - IEEE 9-Bus System
+{'='*60}
+
+Convergence Information:
+  Converged: {results['converged']}
+  Iterations: {results['iterations']}
+  Measurements: {results['measurements_count']}
+  Objective Function: {results['objective_function']:.6f}
+
+Algorithm: Weighted Least Squares (WLS)
+Measurement Types: Voltage magnitudes, Power injections, Power flows
+Noise Level: 0.5-2% of measurement values
+"""
+        summary_text.insert(tk.END, summary_info)
+        summary_text.config(state=tk.DISABLED)
+        
+        summary_text.pack(side="left", fill="both", expand=True)
+        summary_scroll.pack(side="right", fill="y")
+        
+        # Measurements tab
+        measurements_frame = ttk.Frame(notebook)
+        notebook.add(measurements_frame, text="Measurements")
+        
+        # Get measurement summary
+        meas_df = estimator.get_measurement_summary()
+        
+        # Create treeview for measurements
+        meas_columns = list(meas_df.columns)
+        meas_tree = ttk.Treeview(measurements_frame, columns=meas_columns, show="headings", height=15)
+        
+        for col in meas_columns:
+            meas_tree.heading(col, text=col)
+            meas_tree.column(col, width=80 if col != "Type" else 120, anchor="center")
+        
+        # Add measurement data
+        for _, row in meas_df.iterrows():
+            meas_tree.insert("", "end", values=list(row))
+        
+        meas_scroll = ttk.Scrollbar(measurements_frame, orient="vertical", command=meas_tree.yview)
+        meas_tree.configure(yscrollcommand=meas_scroll.set)
+        
+        meas_tree.pack(side="left", fill="both", expand=True)
+        meas_scroll.pack(side="right", fill="y")
+        
+        # Comparison tab
+        comparison_frame = ttk.Frame(notebook)
+        notebook.add(comparison_frame, text="True vs Estimated")
+        
+        # Get comparison data
+        comp_df = estimator.compare_with_true_state(results)
+        
+        if not comp_df.empty:
+            # Create treeview for comparison
+            comp_columns = list(comp_df.columns)
+            comp_tree = ttk.Treeview(comparison_frame, columns=comp_columns, show="headings", height=15)
+            
+            for col in comp_columns:
+                comp_tree.heading(col, text=col)
+                comp_tree.column(col, width=100, anchor="center")
+            
+            # Add comparison data
+            for _, row in comp_df.iterrows():
+                comp_tree.insert("", "end", values=list(row))
+            
+            comp_scroll = ttk.Scrollbar(comparison_frame, orient="vertical", command=comp_tree.yview)
+            comp_tree.configure(yscrollcommand=comp_scroll.set)
+            
+            comp_tree.pack(side="left", fill="both", expand=True)
+            comp_scroll.pack(side="right", fill="y")
 
     def _display_results(self, net: pp.pandapowerNet) -> None:
         """Show calculation results in the GUI tables and text box."""
