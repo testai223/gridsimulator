@@ -256,6 +256,11 @@ class StateEstimationModule:
         meas_summary = estimator.get_measurement_summary()
         enhanced['measurement_summary'] = meas_summary.to_dict('records')
         
+        # Add measurement vs estimate comparison
+        if results['converged']:
+            meas_vs_est = self._create_measurement_vs_estimate_comparison(estimator, results)
+            enhanced['measurement_vs_estimate'] = meas_vs_est
+        
         # Add comparison with true state
         if results['converged']:
             comparison = estimator.compare_with_true_state(results)
@@ -274,6 +279,58 @@ class StateEstimationModule:
         }
         
         return enhanced
+    
+    def _create_measurement_vs_estimate_comparison(self, estimator: StateEstimator, results: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Create comparison between measured values and estimated values."""
+        comparison_data = []
+        
+        # Get estimated state
+        voltage_magnitudes = results['voltage_magnitudes']
+        voltage_angles = results['voltage_angles']
+        
+        # Calculate estimated measurement values using the same functions
+        estimated_measurements = estimator._calculate_measurement_functions(
+            np.array(voltage_magnitudes), 
+            np.array(voltage_angles)
+        )
+        
+        # Compare each measurement
+        for i, measurement in enumerate(estimator.measurements):
+            measured_value = measurement.value
+            estimated_value = estimated_measurements[i]
+            error = ((estimated_value - measured_value) / measured_value * 100) if measured_value != 0 else 0
+            
+            # Determine measurement description
+            if measurement.meas_type.value == "vm":
+                description = f"Voltage at Bus {measurement.bus_from}"
+                unit = "p.u."
+            elif measurement.meas_type.value == "p_inj":
+                description = f"P injection at Bus {measurement.bus_from}"
+                unit = "MW"
+            elif measurement.meas_type.value == "q_inj":
+                description = f"Q injection at Bus {measurement.bus_from}"
+                unit = "Mvar"
+            elif measurement.meas_type.value == "p_flow":
+                description = f"P flow {measurement.bus_from}→{measurement.bus_to}"
+                unit = "MW"
+            elif measurement.meas_type.value == "q_flow":
+                description = f"Q flow {measurement.bus_from}→{measurement.bus_to}"
+                unit = "Mvar"
+            else:
+                description = f"Unknown measurement"
+                unit = ""
+            
+            comparison_data.append({
+                'Description': description,
+                'Type': measurement.meas_type.value,
+                'Measured Value': f"{measured_value:.4f}",
+                'Estimated Value': f"{estimated_value:.4f}",
+                'Error (%)': f"{error:.2f}",
+                'Noise σ': f"{np.sqrt(measurement.variance):.4f}",
+                'Unit': unit
+            })
+        
+        return comparison_data
     
     def _calculate_accuracy_metrics(self, comparison_df: pd.DataFrame) -> Dict[str, float]:
         """Calculate accuracy metrics from comparison results."""

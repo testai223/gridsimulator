@@ -2198,23 +2198,219 @@ Configuration:
         summary_text.pack(side="left", fill="both", expand=True)
         summary_scroll.pack(side="right", fill="y")
         
-        # Comparison tab
+        # Measurements tab (NEW)
+        if 'measurement_summary' in current_results:
+            measurements_frame = ttk.Frame(notebook)
+            notebook.add(measurements_frame, text="Measurements")
+            
+            # Add explanation label
+            explanation_frame = ttk.Frame(measurements_frame)
+            explanation_frame.pack(fill="x", pady=5)
+            
+            ttk.Label(explanation_frame, text="📊 Raw Measurements (with noise) vs Clean Estimates", 
+                     font=("Arial", 10, "bold")).pack()
+            ttk.Label(explanation_frame, text="These are the actual noisy sensor readings that feed into the state estimator", 
+                     font=("Arial", 9), foreground="gray").pack()
+            
+            # Create treeview for measurements
+            meas_data = current_results['measurement_summary']
+            if meas_data:
+                # Enhanced columns to show measurement vs estimate
+                meas_columns = ["Type", "Bus", "Measured Value", "Noise Level", "Element"]
+                meas_tree = ttk.Treeview(measurements_frame, columns=meas_columns, show="headings", height=15)
+                
+                # Configure headers
+                meas_tree.heading("Type", text="Measurement Type")
+                meas_tree.heading("Bus", text="Bus/Line")  
+                meas_tree.heading("Measured Value", text="Measured Value (noisy)")
+                meas_tree.heading("Noise Level", text="Noise σ")
+                meas_tree.heading("Element", text="Element")
+                
+                # Configure column widths
+                meas_tree.column("Type", width=120, anchor="center")
+                meas_tree.column("Bus", width=80, anchor="center")
+                meas_tree.column("Measured Value", width=130, anchor="center")
+                meas_tree.column("Noise Level", width=80, anchor="center")
+                meas_tree.column("Element", width=80, anchor="center")
+                
+                # Add measurement data with enhanced info
+                for row in meas_data:
+                    meas_type = row.get('Type', 'Unknown')
+                    bus_info = f"{row.get('Bus From', 'N/A')}"
+                    if row.get('Bus To', '-') != '-':
+                        bus_info += f"→{row.get('Bus To')}"
+                    
+                    measured_val = row.get('Value', 'N/A')
+                    noise_level = row.get('Std Dev', 'N/A')
+                    element = row.get('Element', '-')
+                    
+                    # Format the measured value with units
+                    if meas_type == 'vm':
+                        formatted_val = f"{measured_val} p.u."
+                    elif 'p_' in meas_type:
+                        formatted_val = f"{measured_val} MW"
+                    elif 'q_' in meas_type:
+                        formatted_val = f"{measured_val} Mvar"
+                    else:
+                        formatted_val = str(measured_val)
+                    
+                    meas_tree.insert("", "end", values=[
+                        self._format_measurement_type(meas_type),
+                        bus_info,
+                        formatted_val,
+                        noise_level,
+                        element
+                    ])
+                
+                # Add color coding for measurement types
+                meas_tree.tag_configure("voltage", background="#e8f5e8")
+                meas_tree.tag_configure("power", background="#fff2e8")
+                
+                meas_scroll = ttk.Scrollbar(measurements_frame, orient="vertical", command=meas_tree.yview)
+                meas_tree.configure(yscrollcommand=meas_scroll.set)
+                
+                meas_tree.pack(side="left", fill="both", expand=True)
+                meas_scroll.pack(side="right", fill="y")
+        
+        # Measurement vs Estimate tab (NEW)
+        if 'measurement_vs_estimate' in current_results:
+            meas_est_frame = ttk.Frame(notebook)
+            notebook.add(meas_est_frame, text="Measured vs Estimated")
+            
+            # Add explanation label
+            meas_est_explanation_frame = ttk.Frame(meas_est_frame)
+            meas_est_explanation_frame.pack(fill="x", pady=5)
+            
+            ttk.Label(meas_est_explanation_frame, text="🔍 Measurement Cleaning: Noisy Sensors → Clean Estimates", 
+                     font=("Arial", 10, "bold")).pack()
+            ttk.Label(meas_est_explanation_frame, text="See how state estimation transforms noisy measurements into clean, consistent values", 
+                     font=("Arial", 9), foreground="gray").pack()
+            
+            # Create treeview for measurement vs estimate comparison
+            meas_est_data = current_results['measurement_vs_estimate']
+            if meas_est_data:
+                meas_est_columns = ["Description", "Measured", "Estimated", "Difference", "Quality", "Unit"]
+                meas_est_tree = ttk.Treeview(meas_est_frame, columns=meas_est_columns, show="headings", height=15)
+                
+                # Configure headers
+                meas_est_tree.heading("Description", text="Measurement")
+                meas_est_tree.heading("Measured", text="Measured (noisy)")
+                meas_est_tree.heading("Estimated", text="Estimated (clean)")
+                meas_est_tree.heading("Difference", text="Difference (%)")
+                meas_est_tree.heading("Quality", text="Quality")
+                meas_est_tree.heading("Unit", text="Unit")
+                
+                # Configure column widths
+                meas_est_tree.column("Description", width=150, anchor="w")
+                meas_est_tree.column("Measured", width=100, anchor="center")
+                meas_est_tree.column("Estimated", width=100, anchor="center")
+                meas_est_tree.column("Difference", width=80, anchor="center")
+                meas_est_tree.column("Quality", width=80, anchor="center")
+                meas_est_tree.column("Unit", width=60, anchor="center")
+                
+                # Add data with quality assessment
+                for row in meas_est_data:
+                    description = row.get('Description', 'Unknown')
+                    measured = row.get('Measured Value', 'N/A')
+                    estimated = row.get('Estimated Value', 'N/A')
+                    error_str = row.get('Error (%)', '0')
+                    unit = row.get('Unit', '')
+                    
+                    try:
+                        error_val = float(error_str)
+                        abs_error = abs(error_val)
+                        
+                        if abs_error < 1.0:
+                            quality = "Excellent"
+                            tag = "excellent"
+                        elif abs_error < 3.0:
+                            quality = "Good"
+                            tag = "good"
+                        elif abs_error < 5.0:
+                            quality = "Fair"
+                            tag = "fair"
+                        else:
+                            quality = "Poor"
+                            tag = "poor"
+                    except:
+                        quality = "Unknown"
+                        tag = "unknown"
+                    
+                    meas_est_tree.insert("", "end", values=[
+                        description,
+                        measured,
+                        estimated,
+                        f"{error_str}%",
+                        quality,
+                        unit
+                    ], tags=(tag,))
+                
+                # Configure color tags for quality
+                meas_est_tree.tag_configure("excellent", background="#d4edda", foreground="#155724")
+                meas_est_tree.tag_configure("good", background="#d1ecf1", foreground="#0c5460")
+                meas_est_tree.tag_configure("fair", background="#fff3cd", foreground="#856404")
+                meas_est_tree.tag_configure("poor", background="#f8d7da", foreground="#721c24")
+                meas_est_tree.tag_configure("unknown", background="#f8f9fa", foreground="#6c757d")
+                
+                meas_est_scroll = ttk.Scrollbar(meas_est_frame, orient="vertical", command=meas_est_tree.yview)
+                meas_est_tree.configure(yscrollcommand=meas_est_scroll.set)
+                
+                meas_est_tree.pack(side="left", fill="both", expand=True)
+                meas_est_scroll.pack(side="right", fill="y")
+        
+        # Comparison tab (Enhanced)
         if 'comparison' in current_results:
             comparison_frame = ttk.Frame(notebook)
-            notebook.add(comparison_frame, text="True vs Estimated")
+            notebook.add(comparison_frame, text="Estimates vs Truth")
+            
+            # Add explanation label
+            comparison_explanation_frame = ttk.Frame(comparison_frame)
+            comparison_explanation_frame.pack(fill="x", pady=5)
+            
+            ttk.Label(comparison_explanation_frame, text="🎯 State Estimation Results: How Close Did We Get?", 
+                     font=("Arial", 10, "bold")).pack()
+            ttk.Label(comparison_explanation_frame, text="Comparison of estimated values (from noisy measurements) vs true system state", 
+                     font=("Arial", 9), foreground="gray").pack()
             
             # Create treeview for comparison data
             comp_data = current_results['comparison']
             if comp_data:
                 comp_columns = list(comp_data[0].keys())
-                comp_tree = ttk.Treeview(comparison_frame, columns=comp_columns, show="headings", height=20)
+                comp_tree = ttk.Treeview(comparison_frame, columns=comp_columns, show="headings", height=15)
                 
                 for col in comp_columns:
                     comp_tree.heading(col, text=col)
-                    comp_tree.column(col, width=100, anchor="center")
+                    width = 120 if "Error" in col else 100
+                    comp_tree.column(col, width=width, anchor="center")
                 
+                # Add data with color coding based on error
                 for row in comp_data:
-                    comp_tree.insert("", "end", values=list(row.values()))
+                    values = list(row.values())
+                    error_str = row.get('V Error (%)', '0')
+                    
+                    try:
+                        error_val = float(str(error_str).replace('%', ''))
+                        abs_error = abs(error_val)
+                        
+                        if abs_error < 0.5:
+                            tag = "excellent"
+                        elif abs_error < 1.0:
+                            tag = "very_good"
+                        elif abs_error < 2.0:
+                            tag = "good"
+                        else:
+                            tag = "fair"
+                    except:
+                        tag = "unknown"
+                    
+                    comp_tree.insert("", "end", values=values, tags=(tag,))
+                
+                # Configure color tags
+                comp_tree.tag_configure("excellent", background="#d4edda", foreground="#155724")
+                comp_tree.tag_configure("very_good", background="#d1ecf1", foreground="#0c5460")
+                comp_tree.tag_configure("good", background="#fff3cd", foreground="#856404")
+                comp_tree.tag_configure("fair", background="#f8d7da", foreground="#721c24")
+                comp_tree.tag_configure("unknown", background="#f8f9fa", foreground="#6c757d")
                 
                 comp_scroll = ttk.Scrollbar(comparison_frame, orient="vertical", command=comp_tree.yview)
                 comp_tree.configure(yscrollcommand=comp_scroll.set)
@@ -2286,6 +2482,17 @@ Measurement Breakdown:
         self.state_estimation_module.clear_history()
         self.se_results_text.delete(1.0, tk.END)
         self.se_status_label.config(text="History cleared - ready for new estimation")
+    
+    def _format_measurement_type(self, meas_type: str) -> str:
+        """Format measurement type for display."""
+        type_mapping = {
+            'vm': 'Voltage Magnitude',
+            'p_inj': 'Active Power Injection',
+            'q_inj': 'Reactive Power Injection', 
+            'p_flow': 'Active Power Flow',
+            'q_flow': 'Reactive Power Flow'
+        }
+        return type_mapping.get(meas_type, meas_type.upper())
 
     def _on_grid_double_click(self, event):
         """Handle double-click on grid list to load grid."""
