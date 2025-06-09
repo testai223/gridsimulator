@@ -3,6 +3,7 @@
 import tkinter as tk
 from tkinter import ttk
 from tkinter import messagebox
+from typing import Dict, Any
 
 from database import GridDatabase
 from engine import GridCalculator, grid_graph, element_tables
@@ -11,6 +12,7 @@ import matplotlib.pyplot as plt
 from examples import create_example_grid, create_ieee_9_bus, create_ieee_39_bus, create_ieee_39_bus_standard
 from contingency import ContingencyAnalysis
 from state_estimator import StateEstimator, run_ieee9_state_estimation
+from state_estimation_module import StateEstimationModule, EstimationConfig, EstimationMode, create_default_config
 
 import pandapower as pp
 from datetime import datetime
@@ -25,6 +27,7 @@ class GridApp:
         self.current_net = None
         self.current_grid_id = None
         self.contingency_analysis = None
+        self.state_estimation_module = StateEstimationModule(db)
         self.root.title("Grid Simulator")
         
         # Initialize example grids in database
@@ -41,6 +44,7 @@ class GridApp:
         self.line_frame = ttk.Frame(notebook)
         self.edit_frame = ttk.Frame(notebook)
         self.contingency_frame = ttk.Frame(notebook)
+        self.state_estimation_frame = ttk.Frame(notebook)
         self.result_frame = ttk.Frame(notebook)
 
         notebook.add(self.grid_frame, text="Grid Manager")
@@ -48,6 +52,7 @@ class GridApp:
         notebook.add(self.line_frame, text="Lines")
         notebook.add(self.edit_frame, text="Edit Network")
         notebook.add(self.contingency_frame, text="Contingency Analysis")
+        notebook.add(self.state_estimation_frame, text="State Estimation")
         notebook.add(self.result_frame, text="Results")
 
         # Bus inputs
@@ -91,6 +96,9 @@ class GridApp:
 
         # Contingency Analysis tab
         self._build_contingency_widgets()
+        
+        # State Estimation tab
+        self._build_state_estimation_widgets()
 
         # Create button frame for better organization
         button_frame_results = ttk.Frame(self.result_frame)
@@ -1603,6 +1611,90 @@ Severity Breakdown:
         
         except Exception as e:
             messagebox.showerror("Error", f"Failed to export current violations: {e}")
+    
+    def _build_state_estimation_widgets(self) -> None:
+        """Build the state estimation interface."""
+        # Title
+        title_frame = ttk.Frame(self.state_estimation_frame)
+        title_frame.pack(fill="x", pady=10)
+        ttk.Label(title_frame, text="Power System State Estimation", font=("Arial", 14, "bold")).pack()
+        
+        # Grid selection frame
+        grid_frame = ttk.LabelFrame(self.state_estimation_frame, text="Grid Selection")
+        grid_frame.pack(fill="x", pady=5, padx=10)
+        
+        # Grid selection
+        selection_frame = ttk.Frame(grid_frame)
+        selection_frame.pack(fill="x", pady=5)
+        
+        ttk.Label(selection_frame, text="Select Grid:").pack(side=tk.LEFT)
+        self.se_grid_var = tk.StringVar()
+        self.se_grid_combo = ttk.Combobox(selection_frame, textvariable=self.se_grid_var, state="readonly", width=40)
+        self.se_grid_combo.pack(side=tk.LEFT, padx=10)
+        
+        ttk.Button(selection_frame, text="Use Current Grid", command=self._se_use_current_grid).pack(side=tk.LEFT, padx=5)
+        ttk.Button(selection_frame, text="Refresh Grid List", command=self._se_refresh_grids).pack(side=tk.LEFT, padx=5)
+        
+        # Configuration frame
+        config_frame = ttk.LabelFrame(self.state_estimation_frame, text="Estimation Configuration")
+        config_frame.pack(fill="x", pady=5, padx=10)
+        
+        # Mode selection
+        mode_frame = ttk.Frame(config_frame)
+        mode_frame.pack(fill="x", pady=5)
+        
+        ttk.Label(mode_frame, text="Mode:").pack(side=tk.LEFT)
+        self.se_mode_var = tk.StringVar(value="voltage_only")
+        ttk.Radiobutton(mode_frame, text="Voltage Only", variable=self.se_mode_var, value="voltage_only").pack(side=tk.LEFT, padx=10)
+        ttk.Radiobutton(mode_frame, text="Comprehensive", variable=self.se_mode_var, value="comprehensive").pack(side=tk.LEFT, padx=10)
+        
+        # Parameters frame
+        params_frame = ttk.Frame(config_frame)
+        params_frame.pack(fill="x", pady=5)
+        
+        ttk.Label(params_frame, text="Voltage Noise (%):").pack(side=tk.LEFT)
+        self.se_voltage_noise_var = tk.StringVar(value="1.0")
+        ttk.Entry(params_frame, textvariable=self.se_voltage_noise_var, width=8).pack(side=tk.LEFT, padx=5)
+        
+        ttk.Label(params_frame, text="Power Noise (%):").pack(side=tk.LEFT, padx=10)
+        self.se_power_noise_var = tk.StringVar(value="2.0")
+        ttk.Entry(params_frame, textvariable=self.se_power_noise_var, width=8).pack(side=tk.LEFT, padx=5)
+        
+        ttk.Label(params_frame, text="Max Iterations:").pack(side=tk.LEFT, padx=10)
+        self.se_max_iter_var = tk.StringVar(value="20")
+        ttk.Entry(params_frame, textvariable=self.se_max_iter_var, width=8).pack(side=tk.LEFT, padx=5)
+        
+        # Run estimation frame
+        run_frame = ttk.Frame(self.state_estimation_frame)
+        run_frame.pack(fill="x", pady=10, padx=10)
+        
+        ttk.Button(run_frame, text="Run State Estimation", command=self._run_state_estimation, 
+                  style="Accent.TButton").pack(side=tk.LEFT, padx=5)
+        ttk.Button(run_frame, text="View Results", command=self._view_se_results).pack(side=tk.LEFT, padx=5)
+        ttk.Button(run_frame, text="Export Results", command=self._export_se_results).pack(side=tk.LEFT, padx=5)
+        ttk.Button(run_frame, text="Clear History", command=self._clear_se_history).pack(side=tk.LEFT, padx=5)
+        
+        # Status frame
+        status_frame = ttk.LabelFrame(self.state_estimation_frame, text="Status")
+        status_frame.pack(fill="x", pady=5, padx=10)
+        
+        self.se_status_label = ttk.Label(status_frame, text="Ready to run state estimation")
+        self.se_status_label.pack(pady=5)
+        
+        # Results summary frame
+        summary_frame = ttk.LabelFrame(self.state_estimation_frame, text="Latest Results Summary")
+        summary_frame.pack(fill="both", expand=True, pady=5, padx=10)
+        
+        # Results text area
+        self.se_results_text = tk.Text(summary_frame, height=8, wrap=tk.WORD, font=("Courier", 9))
+        se_scrollbar = ttk.Scrollbar(summary_frame, orient="vertical", command=self.se_results_text.yview)
+        self.se_results_text.configure(yscrollcommand=se_scrollbar.set)
+        
+        self.se_results_text.pack(side="left", fill="both", expand=True)
+        se_scrollbar.pack(side="right", fill="y")
+        
+        # Initialize grid list
+        self._se_refresh_grids()
 
     def _build_grid_manager_widgets(self) -> None:
         """Build the grid management interface."""
@@ -1957,6 +2049,243 @@ Severity Breakdown:
             network_info += f"Loads: {len(net.load)}\n"
         network_info += "\nNote: Run power flow to see electrical results"
         self.text.insert(tk.END, network_info)
+
+    # State Estimation Methods
+    def _se_refresh_grids(self):
+        """Refresh the grid list for state estimation."""
+        try:
+            grids = self.state_estimation_module.get_available_grids()
+            grid_names = [f"{grid[0]}: {grid[1]}" for grid in grids]
+            self.se_grid_combo['values'] = grid_names
+            
+            if grid_names:
+                self.se_grid_combo.set(grid_names[0])
+        except Exception as e:
+            self.se_status_label.config(text=f"Error loading grids: {e}")
+    
+    def _se_use_current_grid(self):
+        """Use the currently loaded grid for state estimation."""
+        if self.current_net is None:
+            messagebox.showwarning("Warning", "No grid is currently loaded")
+            return
+        
+        grid_name = "Current Grid"
+        if hasattr(self, 'current_grid_label'):
+            grid_name = self.current_grid_label.cget("text")
+        
+        self.se_grid_var.set(f"Current: {grid_name}")
+        self.se_status_label.config(text="Ready to estimate current grid")
+    
+    def _run_state_estimation(self):
+        """Run state estimation with current configuration."""
+        try:
+            # Update status
+            self.se_status_label.config(text="Running state estimation...")
+            self.root.update()
+            
+            # Create configuration
+            mode_str = self.se_mode_var.get()
+            mode = EstimationMode.VOLTAGE_ONLY if mode_str == "voltage_only" else EstimationMode.COMPREHENSIVE
+            
+            config = EstimationConfig(
+                mode=mode,
+                voltage_noise_std=float(self.se_voltage_noise_var.get()) / 100.0,
+                power_noise_std=float(self.se_power_noise_var.get()) / 100.0,
+                max_iterations=int(self.se_max_iter_var.get()),
+                tolerance=1e-4,
+                include_all_buses=True,
+                include_power_injections=(mode == EstimationMode.COMPREHENSIVE),
+                include_power_flows=(mode == EstimationMode.COMPREHENSIVE)
+            )
+            
+            # Determine which grid to use
+            selected_grid = self.se_grid_var.get()
+            
+            if selected_grid.startswith("Current:"):
+                # Use current grid
+                if self.current_net is None:
+                    messagebox.showerror("Error", "No grid is currently loaded")
+                    return
+                
+                grid_name = selected_grid.replace("Current: ", "")
+                results = self.state_estimation_module.estimate_current_grid_state(
+                    self.current_net, grid_name, config
+                )
+            else:
+                # Use database grid
+                grid_id = int(selected_grid.split(":")[0])
+                results = self.state_estimation_module.estimate_grid_state(grid_id, config)
+            
+            # Display results
+            self._display_se_results(results)
+            
+            if results.get('success', False):
+                self.se_status_label.config(text="State estimation completed successfully")
+            else:
+                self.se_status_label.config(text=f"State estimation failed: {results.get('error', 'Unknown error')}")
+                
+        except Exception as e:
+            self.se_status_label.config(text=f"Error: {e}")
+            messagebox.showerror("State Estimation Error", str(e))
+    
+    def _display_se_results(self, results: Dict[str, Any]):
+        """Display state estimation results in the summary area."""
+        self.se_results_text.delete(1.0, tk.END)
+        
+        if not results.get('success', False):
+            error_text = f"State Estimation Failed\n{'='*50}\nError: {results.get('error', 'Unknown error')}\n"
+            self.se_results_text.insert(tk.END, error_text)
+            return
+        
+        # Format results summary
+        grid_info = results.get('grid_info', {})
+        convergence = results.get('convergence', {})
+        accuracy = results.get('accuracy_metrics', {})
+        
+        summary = f"""State Estimation Results
+{'='*50}
+Grid: {grid_info.get('name', 'Unknown')}
+Time: {results.get('timestamp', 'Unknown')}
+
+Convergence:
+  Status: {'✓ Converged' if convergence.get('converged', False) else '✗ Failed'}
+  Iterations: {convergence.get('iterations', 'N/A')}
+  Measurements: {convergence.get('measurements_count', 'N/A')}
+  Objective Function: {convergence.get('objective_function', 'N/A'):.6f}
+
+Accuracy Metrics:
+  Max Voltage Error: {accuracy.get('max_voltage_error_percent', 'N/A'):.2f}%
+  Mean Voltage Error: {accuracy.get('mean_voltage_error_percent', 'N/A'):.2f}%
+  RMS Voltage Error: {accuracy.get('rms_voltage_error_percent', 'N/A'):.2f}%
+
+Configuration:
+  Mode: {results.get('config', {}).mode.value if hasattr(results.get('config', {}), 'mode') else 'N/A'}
+  Voltage Noise: {results.get('config', {}).voltage_noise_std * 100 if hasattr(results.get('config', {}), 'voltage_noise_std') else 'N/A'}%
+  Max Iterations: {results.get('config', {}).max_iterations if hasattr(results.get('config', {}), 'max_iterations') else 'N/A'}
+"""
+        
+        self.se_results_text.insert(tk.END, summary)
+    
+    def _view_se_results(self):
+        """View detailed state estimation results in a new window."""
+        current_results = self.state_estimation_module.get_current_results()
+        
+        if not current_results or not current_results.get('success', False):
+            messagebox.showwarning("Warning", "No successful state estimation results available")
+            return
+        
+        # Create detailed results window
+        results_window = tk.Toplevel(self.root)
+        results_window.title("State Estimation Results - Detailed View")
+        results_window.geometry("1000x700")
+        
+        # Create notebook for different views
+        notebook = ttk.Notebook(results_window)
+        notebook.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        # Summary tab
+        summary_frame = ttk.Frame(notebook)
+        notebook.add(summary_frame, text="Summary")
+        
+        summary_text = tk.Text(summary_frame, wrap=tk.WORD, font=("Courier", 10))
+        summary_scroll = ttk.Scrollbar(summary_frame, orient="vertical", command=summary_text.yview)
+        summary_text.configure(yscrollcommand=summary_scroll.set)
+        
+        # Add detailed summary
+        self._format_detailed_summary(summary_text, current_results)
+        summary_text.config(state=tk.DISABLED)
+        
+        summary_text.pack(side="left", fill="both", expand=True)
+        summary_scroll.pack(side="right", fill="y")
+        
+        # Comparison tab
+        if 'comparison' in current_results:
+            comparison_frame = ttk.Frame(notebook)
+            notebook.add(comparison_frame, text="True vs Estimated")
+            
+            # Create treeview for comparison data
+            comp_data = current_results['comparison']
+            if comp_data:
+                comp_columns = list(comp_data[0].keys())
+                comp_tree = ttk.Treeview(comparison_frame, columns=comp_columns, show="headings", height=20)
+                
+                for col in comp_columns:
+                    comp_tree.heading(col, text=col)
+                    comp_tree.column(col, width=100, anchor="center")
+                
+                for row in comp_data:
+                    comp_tree.insert("", "end", values=list(row.values()))
+                
+                comp_scroll = ttk.Scrollbar(comparison_frame, orient="vertical", command=comp_tree.yview)
+                comp_tree.configure(yscrollcommand=comp_scroll.set)
+                
+                comp_tree.pack(side="left", fill="both", expand=True)
+                comp_scroll.pack(side="right", fill="y")
+    
+    def _format_detailed_summary(self, text_widget, results):
+        """Format detailed summary for results viewing."""
+        grid_info = results.get('grid_info', {})
+        convergence = results.get('convergence', {})
+        network_stats = results.get('network_stats', {})
+        measurements = results.get('measurement_summary', [])
+        
+        detailed_text = f"""State Estimation Detailed Results
+{'='*60}
+
+Grid Information:
+  Name: {grid_info.get('name', 'Unknown')}
+  Description: {grid_info.get('description', 'N/A')}
+  Analysis Time: {results.get('timestamp', 'Unknown')}
+
+Network Statistics:
+  Buses: {network_stats.get('buses', 'N/A')}
+  Lines: {network_stats.get('lines', 'N/A')}
+  Generators: {network_stats.get('generators', 'N/A')}
+  Loads: {network_stats.get('loads', 'N/A')}
+  Transformers: {network_stats.get('transformers', 'N/A')}
+
+Convergence Details:
+  Converged: {convergence.get('converged', False)}
+  Iterations: {convergence.get('iterations', 'N/A')}
+  Total Measurements: {convergence.get('measurements_count', 'N/A')}
+  Objective Function: {convergence.get('objective_function', 'N/A'):.8f}
+
+Measurement Breakdown:
+"""
+        
+        # Add measurement type counts
+        if measurements:
+            measurement_types = {}
+            for meas in measurements:
+                mtype = meas.get('Type', 'Unknown')
+                measurement_types[mtype] = measurement_types.get(mtype, 0) + 1
+            
+            for mtype, count in measurement_types.items():
+                detailed_text += f"  {mtype}: {count} measurements\n"
+        
+        text_widget.insert(tk.END, detailed_text)
+    
+    def _export_se_results(self):
+        """Export state estimation results to file."""
+        try:
+            current_results = self.state_estimation_module.get_current_results()
+            
+            if not current_results or not current_results.get('success', False):
+                messagebox.showwarning("Warning", "No successful results to export")
+                return
+            
+            # Export as CSV
+            filename = self.state_estimation_module.export_results(current_results, 'csv')
+            messagebox.showinfo("Success", f"Results exported to {filename}")
+            
+        except Exception as e:
+            messagebox.showerror("Export Error", f"Failed to export results: {e}")
+    
+    def _clear_se_history(self):
+        """Clear state estimation history."""
+        self.state_estimation_module.clear_history()
+        self.se_results_text.delete(1.0, tk.END)
+        self.se_status_label.config(text="History cleared - ready for new estimation")
 
     def _on_grid_double_click(self, event):
         """Handle double-click on grid list to load grid."""
