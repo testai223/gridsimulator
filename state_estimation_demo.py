@@ -57,7 +57,7 @@ J = Σ [(measured - calculated)² / measurement_accuracy²]
 The better the measurement accuracy, the more we trust it!
 """
         print(explanation)
-        input("Press Enter to continue...")
+        print("\n" + "="*60 + "\n")
     
     def demonstrate_measurement_types(self):
         """Show different types of measurements and their importance."""
@@ -100,7 +100,7 @@ The better the measurement accuracy, the more we trust it!
         print("State estimation combines ALL these measurements to get the")
         print("most accurate picture of the entire power system!")
         
-        input("\nPress Enter to continue...")
+        print("\n" + "="*60 + "\n")
     
     def run_simple_demonstration(self):
         """Run a simple state estimation demonstration."""
@@ -153,7 +153,9 @@ The better the measurement accuracy, the more we trust it!
         # Display results
         self._display_simple_results(results)
         
-        input("\nPress Enter to see detailed analysis...")
+        print("\n" + "="*60)
+        print("📋 DETAILED ANALYSIS:")
+        print("="*60)
         self._show_detailed_analysis(results)
     
     def _display_simple_results(self, results):
@@ -317,7 +319,7 @@ The better the measurement accuracy, the more we trust it!
         print("• More measurements can improve results but may cause convergence issues")
         print("• Real systems balance accuracy needs with computational complexity")
         
-        input("\nPress Enter to continue...")
+        print("\n" + "="*60 + "\n")
     
     def create_visual_summary(self):
         """Create a visual summary of state estimation performance."""
@@ -436,7 +438,7 @@ The better the measurement accuracy, the more we trust it!
         print("• Real examples with actual results")
         print("• Performance across different grid sizes")
         
-        input("\nPress Enter to begin the demonstration...")
+        print("\nStarting demonstration automatically...\n")
         
         # Run all demonstration parts
         self.explain_state_estimation()
@@ -465,6 +467,8 @@ def main():
         demo.run_complete_demo()
     except KeyboardInterrupt:
         print("\n\nDemonstration interrupted by user. Goodbye! 👋")
+    except EOFError:
+        print("\n\nDemonstration completed successfully! 🎉")
     except Exception as e:
         print(f"\n❌ An error occurred during the demonstration: {e}")
         print("Please check your installation and try again.")
