@@ -3,7 +3,7 @@
 import tkinter as tk
 from tkinter import ttk
 from tkinter import messagebox
-from typing import Dict, Any
+from typing import Dict, Any, List, Tuple
 
 from database import GridDatabase
 from engine import GridCalculator, grid_graph, element_tables
@@ -1653,7 +1653,7 @@ Severity Breakdown:
         params_frame.pack(fill="x", pady=5)
         
         ttk.Label(params_frame, text="Voltage Noise (%):").pack(side=tk.LEFT)
-        self.se_voltage_noise_var = tk.StringVar(value="1.0")
+        self.se_voltage_noise_var = tk.StringVar(value="3.0")  # Increased default for visibility
         ttk.Entry(params_frame, textvariable=self.se_voltage_noise_var, width=8).pack(side=tk.LEFT, padx=5)
         
         ttk.Label(params_frame, text="Power Noise (%):").pack(side=tk.LEFT, padx=10)
@@ -1669,6 +1669,10 @@ Severity Breakdown:
         run_frame.pack(fill="x", pady=10, padx=10)
         
         ttk.Button(run_frame, text="Run State Estimation", command=self._run_state_estimation, 
+                  style="Accent.TButton").pack(side=tk.LEFT, padx=5)
+        ttk.Button(run_frame, text="SE → Load Flow", command=self._run_se_to_loadflow, 
+                  style="Accent.TButton").pack(side=tk.LEFT, padx=5)
+        ttk.Button(run_frame, text="Simulate Outage", command=self._simulate_measurement_outage,
                   style="Accent.TButton").pack(side=tk.LEFT, padx=5)
         ttk.Button(run_frame, text="View Results", command=self._view_se_results).pack(side=tk.LEFT, padx=5)
         ttk.Button(run_frame, text="Export Results", command=self._export_se_results).pack(side=tk.LEFT, padx=5)
@@ -2128,6 +2132,386 @@ Severity Breakdown:
             self.se_status_label.config(text=f"Error: {e}")
             messagebox.showerror("State Estimation Error", str(e))
     
+    def _run_se_to_loadflow(self):
+        """Run load flow using state estimation results as initialization."""
+        try:
+            # Check if we have valid SE results
+            current_results = self.state_estimation_module.get_current_results()
+            if not current_results or not current_results.get('success', False):
+                messagebox.showwarning("Warning", 
+                    "Please run state estimation first before using SE→Load Flow")
+                return
+            
+            # Update status
+            self.se_status_label.config(text="Running load flow with SE initialization...")
+            self.root.update()
+            
+            # Determine which grid to use
+            selected_grid = self.se_grid_var.get()
+            
+            if selected_grid.startswith("Current:"):
+                # Use current grid
+                if self.current_net is None:
+                    messagebox.showerror("Error", "No grid is currently loaded")
+                    return
+                
+                lf_results = self.state_estimation_module.run_load_flow_with_se_results(net=self.current_net)
+            else:
+                # Use database grid
+                grid_id = int(selected_grid.split(":")[0])
+                lf_results = self.state_estimation_module.run_load_flow_with_se_results(grid_id=grid_id)
+            
+            # Display SE→LF results
+            self._display_se_lf_results(lf_results)
+            
+            if lf_results.get('success', False):
+                self.se_status_label.config(text="SE→Load Flow completed successfully")
+            else:
+                self.se_status_label.config(text=f"SE→Load Flow failed: {lf_results.get('error', 'Unknown error')}")
+                
+        except Exception as e:
+            self.se_status_label.config(text=f"Error: {e}")
+            messagebox.showerror("SE→Load Flow Error", str(e))
+    
+    def _display_se_lf_results(self, results: Dict[str, Any]):
+        """Display SE to load flow results in the summary area."""
+        self.se_results_text.delete(1.0, tk.END)
+        
+        if not results.get('success', False):
+            error_text = f"SE→Load Flow Failed\n{'='*50}\nError: {results.get('error', 'Unknown error')}\n"
+            self.se_results_text.insert(tk.END, error_text)
+            return
+        
+        # Format SE→LF results summary
+        lf_results = results.get('load_flow_results', {})
+        convergence_metrics = results.get('convergence_metrics', {})
+        source_info = results.get('source_se_results', {})
+        
+        summary = f"""SE → Load Flow Results
+{'='*50}
+Source Grid: {source_info.get('name', 'Unknown')}
+Time: {results.get('timestamp', 'Unknown')}
+
+Load Flow Status:
+  Converged: {'✓ Yes' if lf_results.get('converged', False) else '✗ No'}
+  SE Initialized: {'✓ Yes' if results.get('se_initialized', False) else '✗ No'}
+  Integration Type: {results.get('integration_type', 'Unknown')}
+
+Convergence Quality:
+  Max Voltage Diff: {f"{convergence_metrics.get('max_voltage_difference_percent', 0):.2f}%" if isinstance(convergence_metrics.get('max_voltage_difference_percent'), (int, float)) else 'N/A'}
+  Mean Voltage Diff: {f"{convergence_metrics.get('mean_voltage_difference_percent', 0):.2f}%" if isinstance(convergence_metrics.get('mean_voltage_difference_percent'), (int, float)) else 'N/A'}
+  RMS Voltage Diff: {f"{convergence_metrics.get('rms_voltage_difference_percent', 0):.2f}%" if isinstance(convergence_metrics.get('rms_voltage_difference_percent'), (int, float)) else 'N/A'}
+  Quality Rating: {convergence_metrics.get('convergence_quality', 'N/A').upper()}
+  Good Initialization: {'✓ Yes' if convergence_metrics.get('se_provided_good_initialization', False) else '✗ No'}
+
+Power Flow Results:
+  Voltage Range: {min(lf_results.get('voltage_magnitudes', [0])):.4f} - {max(lf_results.get('voltage_magnitudes', [0])):.4f} p.u.
+  Active Power Range: {min(lf_results.get('active_power', [0])):.2f} - {max(lf_results.get('active_power', [0])):.2f} MW
+  Reactive Power Range: {min(lf_results.get('reactive_power', [0])):.2f} - {max(lf_results.get('reactive_power', [0])):.2f} Mvar
+"""
+        
+        if 'line_flows' in lf_results and lf_results['line_flows']:
+            line_flows = lf_results['line_flows']
+            if 'loading_percent' in line_flows:
+                max_loading = max(line_flows['loading_percent'])
+                summary += f"  Max Line Loading: {max_loading:.1f}%\n"
+        
+        summary += f"""
+💡 Key Insights:
+  • State estimation provided {'excellent' if convergence_metrics.get('convergence_quality') == 'excellent' else 'good' if convergence_metrics.get('convergence_quality') == 'good' else 'adequate'} initialization for load flow
+  • SE cleaned measurements enable reliable power flow analysis
+  • Results validate consistency between SE and network model
+  • This workflow is used in real grid operations every 2-4 seconds
+"""
+        
+        self.se_results_text.insert(tk.END, summary)
+    
+    def _simulate_measurement_outage(self):
+        """Simulate measurement outage on selected buses."""
+        print(f"DEBUG: _simulate_measurement_outage called")
+        try:
+            # Determine which grid to use
+            selected_grid = self.se_grid_var.get()
+            print(f"DEBUG: Selected grid: {selected_grid}")
+            
+            if selected_grid.startswith("Current:"):
+                # Use current grid
+                if self.current_net is None:
+                    messagebox.showerror("Error", "No grid is currently loaded")
+                    return
+                available_buses = self.state_estimation_module.get_available_buses_for_outage(net=self.current_net)
+                grid_name = selected_grid.replace("Current: ", "")
+                grid_id = None
+            else:
+                # Use database grid
+                grid_id = int(selected_grid.split(":")[0])
+                available_buses = self.state_estimation_module.get_available_buses_for_outage(grid_id=grid_id)
+                grid_name = selected_grid.split(":", 1)[1].strip()
+            
+            if not available_buses:
+                messagebox.showerror("Error", "No buses available for outage simulation")
+                return
+            
+            # Create outage selection dialog
+            self._show_outage_selection_dialog(available_buses, grid_id, grid_name)
+            
+        except Exception as e:
+            messagebox.showerror("Outage Simulation Error", str(e))
+    
+    def _show_outage_selection_dialog(self, available_buses: List[Tuple[int, str]], 
+                                    grid_id: int, grid_name: str):
+        """Show dialog for selecting buses for outage simulation."""
+        
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Measurement Outage Simulation")
+        dialog.geometry("500x600")
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        # Center the dialog
+        dialog.update_idletasks()
+        x = (dialog.winfo_screenwidth() // 2) - (500 // 2)
+        y = (dialog.winfo_screenheight() // 2) - (600 // 2)
+        dialog.geometry(f"500x600+{x}+{y}")
+        
+        # Title and description
+        title_frame = ttk.Frame(dialog)
+        title_frame.pack(fill="x", padx=10, pady=10)
+        
+        ttk.Label(title_frame, text="🚨 Measurement Outage Simulation", 
+                 font=("Arial", 14, "bold")).pack()
+        ttk.Label(title_frame, text=f"Grid: {grid_name}", 
+                 font=("Arial", 10)).pack()
+        ttk.Label(title_frame, text="Select buses where measurements will fail", 
+                 font=("Arial", 10), foreground="gray").pack()
+        
+        # Explanation frame
+        explanation_frame = ttk.LabelFrame(dialog, text="About Measurement Outages")
+        explanation_frame.pack(fill="x", padx=10, pady=5)
+        
+        explanation_text = """Real grid operations face measurement failures due to:
+• Communication link failures
+• Sensor malfunctions  
+• Cyber attacks on SCADA systems
+• Equipment maintenance
+
+This simulation shows how such failures impact state estimation quality and grid observability."""
+        
+        ttk.Label(explanation_frame, text=explanation_text, wraplength=450, 
+                 justify="left", font=("Arial", 9)).pack(padx=5, pady=5)
+        
+        # Bus selection frame
+        selection_frame = ttk.LabelFrame(dialog, text="Select Buses for Outage")
+        selection_frame.pack(fill="both", expand=True, padx=10, pady=5)
+        
+        # Create scrollable frame for bus selection
+        canvas = tk.Canvas(selection_frame)
+        scrollbar = ttk.Scrollbar(selection_frame, orient="vertical", command=canvas.yview)
+        scrollable_frame = ttk.Frame(canvas)
+        
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        # Bus checkboxes
+        bus_vars = {}
+        for bus_idx, bus_name in available_buses:
+            var = tk.BooleanVar()
+            bus_vars[bus_idx] = var
+            
+            checkbox_frame = ttk.Frame(scrollable_frame)
+            checkbox_frame.pack(fill="x", padx=5, pady=2)
+            
+            ttk.Checkbutton(checkbox_frame, text=f"Bus {bus_idx}: {bus_name}", 
+                           variable=var).pack(side="left")
+            
+            # Add info about typical measurements at this bus
+            info_text = "Voltage, Power injections" if bus_idx in [0, 1, 2] else "Voltage"
+            ttk.Label(checkbox_frame, text=f"({info_text})", 
+                     font=("Arial", 8), foreground="gray").pack(side="right")
+        
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        
+        # Quick selection buttons
+        quick_frame = ttk.Frame(dialog)
+        quick_frame.pack(fill="x", padx=10, pady=5)
+        
+        def select_single_bus():
+            # Select first bus as example
+            if available_buses:
+                for var in bus_vars.values():
+                    var.set(False)
+                bus_vars[available_buses[0][0]].set(True)
+        
+        def select_multiple_buses():
+            # Select every third bus
+            for i, (bus_idx, _) in enumerate(available_buses):
+                bus_vars[bus_idx].set(i % 3 == 0)
+        
+        def clear_selection():
+            for var in bus_vars.values():
+                var.set(False)
+        
+        ttk.Label(quick_frame, text="Quick Selection:").pack(side="left")
+        ttk.Button(quick_frame, text="Single Bus", command=select_single_bus).pack(side="left", padx=2)
+        ttk.Button(quick_frame, text="Multiple Buses", command=select_multiple_buses).pack(side="left", padx=2)
+        ttk.Button(quick_frame, text="Clear All", command=clear_selection).pack(side="left", padx=2)
+        
+        # Action buttons
+        button_frame = ttk.Frame(dialog)
+        button_frame.pack(fill="x", padx=10, pady=10)
+        
+        def run_outage_simulation():
+            # Get selected buses
+            selected_buses = [bus_idx for bus_idx, var in bus_vars.items() if var.get()]
+            
+            if not selected_buses:
+                messagebox.showwarning("Warning", "Please select at least one bus for outage simulation")
+                return
+            
+            # Confirm simulation
+            bus_list = ", ".join(map(str, selected_buses))
+            if not messagebox.askyesno("Confirm Outage Simulation", 
+                                     f"Simulate measurement outage at buses: {bus_list}\n\n"
+                                     f"This will show how losing measurements affects state estimation.\n"
+                                     f"Continue?"):
+                return
+            
+            dialog.destroy()
+            
+            # Run the actual simulation
+            self._run_outage_simulation(selected_buses, grid_id)
+        
+        def cancel():
+            dialog.destroy()
+        
+        ttk.Button(button_frame, text="Run Simulation", command=run_outage_simulation,
+                  style="Accent.TButton").pack(side="right", padx=5)
+        ttk.Button(button_frame, text="Cancel", command=cancel).pack(side="right")
+    
+    def _run_outage_simulation(self, outage_buses: List[int], grid_id: int):
+        """Run the actual outage simulation."""
+        try:
+            # Update status
+            bus_list = ", ".join(map(str, outage_buses))
+            self.se_status_label.config(text=f"Simulating outage at buses {bus_list}...")
+            self.root.update()
+            
+            # Create configuration
+            mode_str = self.se_mode_var.get()
+            mode = EstimationMode.VOLTAGE_ONLY if mode_str == "voltage_only" else EstimationMode.COMPREHENSIVE
+            
+            config = EstimationConfig(
+                mode=mode,
+                voltage_noise_std=float(self.se_voltage_noise_var.get()) / 100.0,
+                power_noise_std=float(self.se_power_noise_var.get()) / 100.0,
+                max_iterations=int(self.se_max_iter_var.get()),
+                tolerance=1e-4,
+                include_all_buses=True,
+                include_power_injections=(mode == EstimationMode.COMPREHENSIVE),
+                include_power_flows=(mode == EstimationMode.COMPREHENSIVE)
+            )
+            
+            # Run outage simulation
+            if grid_id is None:
+                # Use current grid
+                results = self.state_estimation_module.simulate_measurement_outage_scenario(
+                    net=self.current_net, outage_buses=outage_buses, config=config
+                )
+            else:
+                # Use database grid
+                results = self.state_estimation_module.simulate_measurement_outage_scenario(
+                    grid_id=grid_id, outage_buses=outage_buses, config=config
+                )
+            
+            # Display results
+            print(f"DEBUG: About to display outage results. Success: {results.get('success', False)}")
+            self._display_outage_results(results)
+            print(f"DEBUG: Outage results displayed")
+            
+            if results.get('success', False):
+                impact = results.get('comparison_analysis', {}).get('quality_impact', 'Unknown')
+                status_msg = f"Outage simulation completed - Impact: {impact}"
+                self.se_status_label.config(text=status_msg)
+                print(f"DEBUG: Status updated to: {status_msg}")
+            else:
+                error_msg = f"Outage simulation failed: {results.get('error', 'Unknown error')}"
+                self.se_status_label.config(text=error_msg)
+                print(f"DEBUG: Error status: {error_msg}")
+                
+        except Exception as e:
+            self.se_status_label.config(text=f"Error: {e}")
+            messagebox.showerror("Outage Simulation Error", str(e))
+    
+    def _display_outage_results(self, results: Dict[str, Any]):
+        """Display outage simulation results in the summary area."""
+        print(f"DEBUG: _display_outage_results called with success: {results.get('success', False)}")
+        self.se_results_text.delete(1.0, tk.END)
+        print(f"DEBUG: Results text cleared")
+        
+        if not results.get('success', False):
+            error_text = f"Outage Simulation Failed\n{'='*50}\nError: {results.get('error', 'Unknown error')}\n"
+            self.se_results_text.insert(tk.END, error_text)
+            print(f"DEBUG: Error text inserted: {error_text[:50]}...")
+            return
+        
+        # Get scenario summary
+        scenario_summary = results.get('scenario_summary', 'No summary available')
+        
+        # Format outage simulation results
+        outage_buses = results.get('outage_buses', [])
+        bus_list = ", ".join(map(str, outage_buses))
+        
+        # Add quick impact assessment for immediate visibility
+        comparison = results.get('comparison_analysis', {})
+        if comparison.get('outage_converged', False):
+            impact_status = f"✅ CONVERGED - {comparison.get('quality_impact', 'Unknown impact')}"
+            voltage_impact = comparison.get('voltage_impact', {})
+            max_error = voltage_impact.get('max_difference_percent', 0)
+            quick_impact = f"Max voltage error: {max_error:.2f}%"
+        else:
+            impact_status = "❌ FAILED - System became unobservable"
+            unobservable = comparison.get('unobservable_buses', [])
+            quick_impact = f"Unobservable buses: {unobservable}"
+        
+        summary = f"""Measurement Outage Simulation Results
+{'='*50}
+Grid: {results.get('grid_name', 'Unknown')}
+Outaged Buses: {bus_list}
+Impact Status: {impact_status}
+Quick Assessment: {quick_impact}
+Time: {results.get('timestamp', 'Unknown')}
+
+SCENARIO ANALYSIS:
+{'-'*30}
+{scenario_summary}
+
+📋 DETAILED ANALYSIS:
+Click 'View Results' for comprehensive outage impact analysis
+including baseline vs outage comparison, observability analysis,
+and operational recommendations.
+
+💡 EDUCATIONAL NOTE:
+This simulation demonstrates how measurement failures in real
+power grids can affect system observability and state estimation
+reliability. Understanding these impacts is crucial for grid
+operators and protection engineers.
+"""
+        
+        self.se_results_text.insert(tk.END, summary)
+        print(f"DEBUG: Outage summary text inserted. Length: {len(summary)} characters")
+        print(f"DEBUG: First 100 chars: {summary[:100]}...")
+        
+        # Force GUI update
+        self.se_results_text.update()
+        self.root.update()
+        print(f"DEBUG: GUI updated")
+    
     def _display_se_results(self, results: Dict[str, Any]):
         """Display state estimation results in the summary area."""
         self.se_results_text.delete(1.0, tk.END)
@@ -2151,12 +2535,12 @@ Convergence:
   Status: {'✓ Converged' if convergence.get('converged', False) else '✗ Failed'}
   Iterations: {convergence.get('iterations', 'N/A')}
   Measurements: {convergence.get('measurements_count', 'N/A')}
-  Objective Function: {convergence.get('objective_function', 'N/A'):.6f}
+  Objective Function: {f"{convergence.get('objective_function', 0):.6f}" if isinstance(convergence.get('objective_function'), (int, float)) else 'N/A'}
 
 Accuracy Metrics:
-  Max Voltage Error: {accuracy.get('max_voltage_error_percent', 'N/A'):.2f}%
-  Mean Voltage Error: {accuracy.get('mean_voltage_error_percent', 'N/A'):.2f}%
-  RMS Voltage Error: {accuracy.get('rms_voltage_error_percent', 'N/A'):.2f}%
+  Max Voltage Error: {f"{accuracy.get('max_voltage_error_percent', 0):.2f}%" if isinstance(accuracy.get('max_voltage_error_percent'), (int, float)) else 'N/A'}
+  Mean Voltage Error: {f"{accuracy.get('mean_voltage_error_percent', 0):.2f}%" if isinstance(accuracy.get('mean_voltage_error_percent'), (int, float)) else 'N/A'}
+  RMS Voltage Error: {f"{accuracy.get('rms_voltage_error_percent', 0):.2f}%" if isinstance(accuracy.get('rms_voltage_error_percent'), (int, float)) else 'N/A'}
 
 Configuration:
   Mode: {results.get('config', {}).mode.value if hasattr(results.get('config', {}), 'mode') else 'N/A'}
@@ -2174,10 +2558,17 @@ Configuration:
             messagebox.showwarning("Warning", "No successful state estimation results available")
             return
         
+        # Check if this is an outage simulation result
+        is_outage_result = 'outage_buses' in current_results and 'comparison_analysis' in current_results
+        
         # Create detailed results window
         results_window = tk.Toplevel(self.root)
-        results_window.title("State Estimation Results - Detailed View")
-        results_window.geometry("1000x700")
+        if is_outage_result:
+            results_window.title("Measurement Outage Simulation - Detailed Analysis")
+            results_window.geometry("1200x800")
+        else:
+            results_window.title("State Estimation Results - Detailed View")
+            results_window.geometry("1000x700")
         
         # Create notebook for different views
         notebook = ttk.Notebook(results_window)
@@ -2185,7 +2576,10 @@ Configuration:
         
         # Summary tab
         summary_frame = ttk.Frame(notebook)
-        notebook.add(summary_frame, text="Summary")
+        if is_outage_result:
+            notebook.add(summary_frame, text="🚨 Outage Analysis")
+        else:
+            notebook.add(summary_frame, text="Summary")
         
         summary_text = tk.Text(summary_frame, wrap=tk.WORD, font=("Courier", 10))
         summary_scroll = ttk.Scrollbar(summary_frame, orient="vertical", command=summary_text.yview)
@@ -2272,19 +2666,19 @@ Configuration:
                 meas_tree.pack(side="left", fill="both", expand=True)
                 meas_scroll.pack(side="right", fill="y")
         
-        # Measurement vs Estimate tab (NEW)
+        # Measurement vs Estimate tab (PRIMARY for real operations)
         if 'measurement_vs_estimate' in current_results:
             meas_est_frame = ttk.Frame(notebook)
-            notebook.add(meas_est_frame, text="Measured vs Estimated")
+            notebook.add(meas_est_frame, text="⭐ Measured vs Estimated")
             
             # Add explanation label
             meas_est_explanation_frame = ttk.Frame(meas_est_frame)
             meas_est_explanation_frame.pack(fill="x", pady=5)
             
-            ttk.Label(meas_est_explanation_frame, text="🔍 Measurement Cleaning: Noisy Sensors → Clean Estimates", 
+            ttk.Label(meas_est_explanation_frame, text="🔍 What Real Grid Operators See: Measured vs Estimated Values", 
                      font=("Arial", 10, "bold")).pack()
-            ttk.Label(meas_est_explanation_frame, text="See how state estimation transforms noisy measurements into clean, consistent values", 
-                     font=("Arial", 9), foreground="gray").pack()
+            ttk.Label(meas_est_explanation_frame, text="This is the primary view in real grid operations - comparing sensor readings with state estimates", 
+                     font=("Arial", 9), foreground="blue").pack()
             
             # Create treeview for measurement vs estimate comparison
             meas_est_data = current_results['measurement_vs_estimate']
@@ -2358,18 +2752,50 @@ Configuration:
                 meas_est_tree.pack(side="left", fill="both", expand=True)
                 meas_est_scroll.pack(side="right", fill="y")
         
-        # Comparison tab (Enhanced)
+        # Quality Metrics tab (Industry Standard)
+        if 'quality_metrics' in current_results:
+            quality_frame = ttk.Frame(notebook)
+            notebook.add(quality_frame, text="Quality Metrics")
+            
+            # Add explanation label
+            quality_explanation_frame = ttk.Frame(quality_frame)
+            quality_explanation_frame.pack(fill="x", pady=5)
+            
+            ttk.Label(quality_explanation_frame, text="📊 Industry-Standard Quality Assessment", 
+                     font=("Arial", 10, "bold")).pack()
+            ttk.Label(quality_explanation_frame, text="Real grid operators use these metrics to validate state estimation quality", 
+                     font=("Arial", 9), foreground="blue").pack()
+            
+            # Quality metrics display
+            quality_data = current_results['quality_metrics']
+            if quality_data and 'error' not in quality_data:
+                # Create text widget for quality metrics
+                quality_text = tk.Text(quality_frame, height=20, wrap=tk.WORD, font=("Courier", 10))
+                quality_scroll = ttk.Scrollbar(quality_frame, orient="vertical", command=quality_text.yview)
+                quality_text.configure(yscrollcommand=quality_scroll.set)
+                
+                # Format quality metrics
+                quality_info = self._format_quality_metrics(quality_data)
+                quality_text.insert(tk.END, quality_info)
+                quality_text.config(state=tk.DISABLED)
+                
+                quality_text.pack(side="left", fill="both", expand=True)
+                quality_scroll.pack(side="right", fill="y")
+        
+        # Comparison tab (Enhanced - Simulation Only)
         if 'comparison' in current_results:
             comparison_frame = ttk.Frame(notebook)
-            notebook.add(comparison_frame, text="Estimates vs Truth")
+            notebook.add(comparison_frame, text="⚠️ Simulation Only")
             
             # Add explanation label
             comparison_explanation_frame = ttk.Frame(comparison_frame)
             comparison_explanation_frame.pack(fill="x", pady=5)
             
-            ttk.Label(comparison_explanation_frame, text="🎯 State Estimation Results: How Close Did We Get?", 
-                     font=("Arial", 10, "bold")).pack()
-            ttk.Label(comparison_explanation_frame, text="Comparison of estimated values (from noisy measurements) vs true system state", 
+            ttk.Label(comparison_explanation_frame, text="⚠️ SIMULATION VALIDATION ONLY - Not Available in Real Grid Operations", 
+                     font=("Arial", 10, "bold"), foreground="red").pack()
+            ttk.Label(comparison_explanation_frame, text="In real grids, 'truth' values are UNKNOWN - that's why state estimation exists!", 
+                     font=("Arial", 9), foreground="red").pack()
+            ttk.Label(comparison_explanation_frame, text="This comparison is only possible in simulation for algorithm validation", 
                      font=("Arial", 9), foreground="gray").pack()
             
             # Create treeview for comparison data
@@ -2420,6 +2846,13 @@ Configuration:
     
     def _format_detailed_summary(self, text_widget, results):
         """Format detailed summary for results viewing."""
+        
+        # Check if this is an outage simulation result
+        if 'outage_buses' in results and 'comparison_analysis' in results:
+            self._format_outage_summary(text_widget, results)
+            return
+        
+        # Standard state estimation results
         grid_info = results.get('grid_info', {})
         convergence = results.get('convergence', {})
         network_stats = results.get('network_stats', {})
@@ -2461,6 +2894,86 @@ Measurement Breakdown:
         
         text_widget.insert(tk.END, detailed_text)
     
+    def _format_outage_summary(self, text_widget, results):
+        """Format detailed summary for outage simulation results."""
+        outage_buses = results.get('outage_buses', [])
+        grid_name = results.get('grid_name', 'Unknown')
+        comparison = results.get('comparison_analysis', {})
+        baseline_results = results.get('baseline_results', {})
+        outage_results = results.get('outage_results', {})
+        
+        bus_list = ", ".join(map(str, outage_buses))
+        
+        detailed_text = f"""Measurement Outage Simulation - Detailed Results
+{'='*70}
+
+OUTAGE SCENARIO:
+  Grid: {grid_name}
+  Outaged Buses: {bus_list}
+  Simulation Time: {results.get('timestamp', 'Unknown')}
+
+BASELINE STATE ESTIMATION (Before Outage):
+  Converged: {baseline_results.get('converged', False)}
+  Iterations: {baseline_results.get('iterations', 'N/A')}
+  Measurements: {baseline_results.get('measurements_count', 'N/A')}
+  Objective Function: {baseline_results.get('objective_function', 'N/A'):.6f}
+
+OUTAGE STATE ESTIMATION (After Outage):
+  Converged: {comparison.get('outage_converged', False)}
+  Iterations: {comparison.get('convergence_impact', {}).get('outage_iterations', 'N/A')}
+  Measurements Remaining: {comparison.get('measurement_impact', {}).get('remaining_measurements', 'N/A')}
+  Measurements Lost: {comparison.get('measurement_impact', {}).get('outaged_measurements', 'N/A')} ({comparison.get('measurement_impact', {}).get('measurement_loss_percent', 0):.1f}%)
+
+"""
+        
+        # Add impact analysis
+        if comparison.get('outage_converged', False):
+            voltage_impact = comparison.get('voltage_impact', {})
+            detailed_text += f"""VOLTAGE ESTIMATE IMPACT:
+  Maximum Difference: {voltage_impact.get('max_difference_percent', 0):.2f}%
+  Average Difference: {voltage_impact.get('mean_difference_percent', 0):.2f}%
+  RMS Difference: {voltage_impact.get('rms_difference_percent', 0):.2f}%
+  Quality Assessment: {comparison.get('quality_impact', 'Unknown')}
+
+"""
+        else:
+            detailed_text += f"""CRITICAL IMPACT:
+  System became UNOBSERVABLE after outage
+  Unobservable Buses: {comparison.get('unobservable_buses', [])}
+  State estimation FAILED to converge
+
+"""
+        
+        # Add observability analysis
+        if 'observability_analysis' in comparison:
+            obs_analysis = comparison['observability_analysis']
+            detailed_text += f"""OBSERVABILITY ANALYSIS:
+  Status: {obs_analysis.get('observability_status', 'Unknown')}
+  Redundancy Before: {obs_analysis.get('redundancy_before', 0):.2f}
+  Redundancy After: {obs_analysis.get('redundancy_after', 0):.2f}
+  Redundancy Loss: {obs_analysis.get('redundancy_loss', 0):.3f}
+
+"""
+            
+            # Add recommendations
+            recommendations = obs_analysis.get('recommendations', [])
+            if recommendations:
+                detailed_text += f"""OPERATIONAL RECOMMENDATIONS:
+"""
+                for i, rec in enumerate(recommendations, 1):
+                    detailed_text += f"  {i}. {rec}\n"
+        
+        # Add scenario summary
+        scenario_summary = results.get('scenario_summary', '')
+        if scenario_summary:
+            detailed_text += f"""
+SCENARIO SUMMARY:
+{'-'*50}
+{scenario_summary}
+"""
+        
+        text_widget.insert(tk.END, detailed_text)
+    
     def _export_se_results(self):
         """Export state estimation results to file."""
         try:
@@ -2493,6 +3006,95 @@ Measurement Breakdown:
             'q_flow': 'Reactive Power Flow'
         }
         return type_mapping.get(meas_type, meas_type.upper())
+    
+    def _format_quality_metrics(self, quality_data: Dict[str, Any]) -> str:
+        """Format quality metrics for display."""
+        chi_square = quality_data.get('chi_square_statistic', 0)
+        chi_critical = quality_data.get('chi_square_critical', 0)
+        chi_passed = quality_data.get('chi_square_test_passed', False)
+        lnr = quality_data.get('largest_normalized_residual', 0)
+        rms_norm = quality_data.get('rms_normalized_residual', 0)
+        suspicious = quality_data.get('suspicious_measurements', 0)
+        bad_data = quality_data.get('bad_measurements', 0)
+        total_meas = quality_data.get('total_measurements', 0)
+        redundancy = quality_data.get('measurement_redundancy', 0)
+        residual_stats = quality_data.get('residual_statistics', {})
+        
+        # Determine overall quality assessment
+        if chi_passed and lnr < 3.0 and bad_data == 0:
+            overall_status = "✅ EXCELLENT - All quality checks passed"
+            status_color = "Green"
+        elif chi_passed and lnr < 4.0 and bad_data == 0:
+            overall_status = "✅ GOOD - Quality checks mostly passed"
+            status_color = "Blue"
+        elif suspicious > 0 or lnr > 4.0:
+            overall_status = "⚠️ SUSPICIOUS - Some measurements may be bad"
+            status_color = "Orange"
+        else:
+            overall_status = "❌ POOR - Quality checks failed"
+            status_color = "Red"
+        
+        quality_text = f"""POWER SYSTEM STATE ESTIMATION QUALITY ASSESSMENT
+{'='*65}
+
+🎯 OVERALL STATUS: {overall_status}
+
+📊 CHI-SQUARE TEST (Network Consistency Check)
+{'─'*50}
+Chi-Square Statistic:    {chi_square:.3f}
+Critical Value (95%):    {chi_critical:.3f}
+Test Result:             {'✅ PASSED' if chi_passed else '❌ FAILED'}
+Degrees of Freedom:      {quality_data.get('degrees_of_freedom', 0)}
+
+🔍 BAD DATA DETECTION (Industry Standard: LNR Method)
+{'─'*50}
+Largest Normalized Residual: {lnr:.3f}
+  • LNR < 3.0:  Normal measurement
+  • LNR 3.0-4.0: Suspicious measurement  
+  • LNR > 4.0:  Likely bad data
+
+RMS Normalized Residual:     {rms_norm:.3f}
+Suspicious Measurements:     {suspicious}/{total_meas}
+Bad Data Detected:          {bad_data}/{total_meas}
+
+📈 MEASUREMENT STATISTICS
+{'─'*50}
+Total Measurements:     {total_meas}
+Measurement Redundancy: {redundancy:.2f}
+  • Redundancy > 1.5: Good observability
+  • Redundancy < 1.2: Poor observability
+
+📊 RESIDUAL ANALYSIS
+{'─'*50}
+Mean Residual:          {residual_stats.get('mean', 0):.6f}
+Std Dev Residuals:      {residual_stats.get('std', 0):.6f}
+Max Absolute Residual:  {residual_stats.get('max_abs', 0):.6f}
+RMS Residual:          {residual_stats.get('rms', 0):.6f}
+
+💡 INTERPRETATION FOR GRID OPERATORS:
+{'─'*50}
+• Chi-square test validates network model consistency
+• LNR identifies faulty sensors needing maintenance  
+• Low residuals indicate good measurement quality
+• High redundancy improves bad data detection
+
+⚠️  RECOMMENDED ACTIONS:
+{'─'*50}"""
+
+        if bad_data > 0:
+            quality_text += f"\n• URGENT: {bad_data} bad measurements detected - investigate sensors"
+        if suspicious > 0:
+            quality_text += f"\n• WARNING: {suspicious} suspicious measurements - monitor closely"
+        if not chi_passed:
+            quality_text += "\n• CHECK: Network model may have errors or gross measurement errors"
+        if redundancy < 1.2:
+            quality_text += "\n• IMPROVE: Add more measurements for better observability"
+        if all([chi_passed, lnr < 3.0, bad_data == 0, redundancy > 1.5]):
+            quality_text += "\n• ✅ EXCELLENT: System operating with high-quality state estimates"
+        
+        quality_text += f"\n\n📋 NOTE: These are the same metrics used by real grid operators\n      worldwide to validate state estimation quality in real-time."
+        
+        return quality_text
 
     def _on_grid_double_click(self, event):
         """Handle double-click on grid list to load grid."""

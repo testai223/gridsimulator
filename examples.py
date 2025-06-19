@@ -6,12 +6,13 @@ import pandapower as pp
 
 
 def create_example_grid() -> pp.pandapowerNet:
-    """Return a minimal grid with two buses, a line, an external grid and a load."""
+    """Return a minimal grid with two buses, a line, a generator and a load."""
     net = pp.create_empty_network()
     hv_bus = pp.create_bus(net, vn_kv=20.0, name="HV Bus")
-    lv_bus = pp.create_bus(net, vn_kv=0.4, name="LV Bus")
+    lv_bus = pp.create_bus(net, vn_kv=20.0, name="LV Bus")  # Same voltage level for simplicity
 
-    pp.create_ext_grid(net, bus=hv_bus, vm_pu=1.0, name="Grid Connection")
+    # Create generator at HV bus (slack bus for state estimation)
+    pp.create_gen(net, bus=hv_bus, p_mw=5.0, vm_pu=1.0, slack=True, name="Generator")
 
     pp.create_line_from_parameters(
         net,
