@@ -1,0 +1,59 @@
+* { box-sizing: border-box; }
+body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: #f3f5f8; color: #1d2733; }
+header { display: flex; align-items: center; gap: 1.5rem; padding: .7rem 1.2rem; background: #1f3b57; color: #fff; flex-wrap: wrap; }
+header h1 { font-size: 1.3rem; margin: 0; }
+.grid-picker { display: flex; gap: .5rem; align-items: center; }
+.grid-picker select { min-width: 320px; padding: .3rem; }
+.status { margin-left: auto; font-size: .9rem; opacity: .9; }
+.status.busy::before { content: "⏳ "; }
+.status.error { color: #ffb4b4; }
+.tabs { display: flex; gap: .2rem; padding: 0 1.2rem; background: #2c5070; }
+.tab { background: none; border: none; color: #d6e2ee; padding: .7rem 1rem; cursor: pointer; font-size: .95rem; border-bottom: 3px solid transparent; }
+.tab.active { color: #fff; border-bottom-color: #ffc107; }
+main { padding: 1rem 1.2rem; }
+.panel { display: none; }
+.panel.active { display: block; }
+.card { background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,.08); padding: .9rem 1rem; margin-bottom: 1rem; }
+.card h2 { margin: 0 0 .6rem; font-size: 1.1rem; }
+.card h3 { margin: 0 0 .5rem; font-size: 1rem; }
+.card h2 small { font-weight: normal; color: #667; font-size: .85rem; }
+.row { display: flex; gap: 1rem; }
+.row.wrap { flex-wrap: wrap; margin-bottom: .7rem; }
+.row label { font-size: .85rem; color: #445; }
+.grow { flex: 1; min-width: 0; }
+.side { width: 300px; flex-shrink: 0; }
+.hint { color: #667; font-size: .85rem; margin-top: 0; }
+button { padding: .4rem .9rem; border-radius: 5px; border: 1px solid #b8c4d0; background: #fff; cursor: pointer; }
+button.primary { background: #1f6fb2; color: #fff; border-color: #1f6fb2; }
+button:disabled { opacity: .5; cursor: wait; }
+select[multiple] { min-width: 220px; }
+input[type=number] { width: 110px; padding: .25rem; }
+label.inline { margin-left: 1rem; font-size: .9rem; }
+.graph { width: 100%; height: 560px; border: 1px solid #e3e8ee; border-radius: 6px; background: #fbfcfd; }
+.graph svg { width: 100%; height: 100%; }
+.graph text { font-size: 10px; fill: #223; pointer-events: none; }
+.legend { display: flex; gap: 1rem; flex-wrap: wrap; font-size: .8rem; color: #445; margin-top: .4rem; }
+.dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; vertical-align: middle; }
+.dot.ok { background: #2e9d5b; } .dot.warn { background: #d9534f; } .dot.none { background: #8a99a8; }
+.sq.gen { display: inline-block; width: 10px; height: 10px; border: 2px solid #1f3b57; vertical-align: middle; }
+.ln { display: inline-block; width: 22px; height: 0; vertical-align: middle; border-top: 3px solid #7b8a99; }
+.ln.trafo { border-top-style: dashed; border-top-color: #8e44ad; }
+.ln.over { border-top-color: #d9534f; }
+.summary { display: flex; gap: .8rem; flex-wrap: wrap; margin-bottom: 1rem; }
+.kpi { background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,.08); padding: .6rem .9rem; min-width: 140px; }
+.kpi .label { font-size: .75rem; color: #667; text-transform: uppercase; letter-spacing: .03em; }
+.kpi .value { font-size: 1.25rem; font-weight: 600; }
+.kpi.bad .value { color: #c0392b; } .kpi.good .value { color: #1e8449; }
+.table-wrap { max-height: 420px; overflow: auto; }
+table { border-collapse: collapse; width: 100%; font-size: .85rem; }
+th, td { padding: .3rem .55rem; border-bottom: 1px solid #edf0f3; text-align: right; white-space: nowrap; }
+th { position: sticky; top: 0; background: #f0f3f6; cursor: pointer; text-align: right; }
+td.text, th.text { text-align: left; }
+tr.warn td { background: #fdecea; }
+tr.sev-Critical td { background: #f8d7da; } tr.sev-High td { background: #fde2cf; }
+tr.sev-Medium td { background: #fff6d6; } tr.sev-Low td { background: #e8f6ec; }
+tr.oos td { color: #99a; font-style: italic; }
+.stats td { text-align: left; } .stats td:last-child { text-align: right; font-weight: 600; }
+pre { white-space: pre-wrap; font-size: .85rem; background: #f6f8fa; padding: .6rem; border-radius: 6px; min-height: 2rem; }
+footer { text-align: center; color: #889; font-size: .8rem; padding: 1rem; }
+@media (max-width: 900px) { .row { flex-direction: column; } .side { width: auto; } }
