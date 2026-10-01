@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Grid Simulator – Web GUI</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <h1>⚡ Grid Simulator</h1>
+  <div class="grid-picker">
+    <label for="grid-select">Grid:</label>
+    <select id="grid-select"></select>
+    <button id="btn-load-grid">Load</button>
+  </div>
+  <div id="status" class="status">Loading grids…</div>
+</header>
+
+<nav class="tabs">
+  <button class="tab active" data-tab="network">Network</button>
+  <button class="tab" data-tab="loadflow">Load Flow</button>
+  <button class="tab" data-tab="contingency">Contingency (N-1)</button>
+  <button class="tab" data-tab="se">State Estimation</button>
+</nav>
+
+<main>
+  <!-- Network -->
+  <section id="tab-network" class="panel active">
+    <div class="row">
+      <div class="card grow">
+        <h2>Network diagram <small id="graph-caption"></small></h2>
+        <div id="graph" class="graph"></div>
+        <div class="legend">
+          <span><i class="dot ok"></i> 0.95–1.05 p.u.</span>
+          <span><i class="dot warn"></i> outside limits</span>
+          <span><i class="dot none"></i> no results yet</span>
+          <span><i class="sq gen"></i> generator / ext. grid</span>
+          <span><i class="ln line"></i> line</span>
+          <span><i class="ln trafo"></i> transformer</span>
+          <span><i class="ln over"></i> loading &gt; 85 %</span>
+        </div>
+      </div>
+      <div class="card side">
+        <h2>Grid summary</h2>
+        <div id="grid-stats"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Load flow -->
+  <section id="tab-loadflow" class="panel">
+    <div class="card">
+      <h2>Load flow</h2>
+      <p class="hint">Optionally take elements out of service (what-if study) before running the load flow.</p>
+      <div class="row wrap" id="outage-pickers">
+        <label>Lines out of service<br><select id="lf-out-line" multiple size="5"></select></label>
+        <label>Transformers out of service<br><select id="lf-out-trafo" multiple size="5"></select></label>
+        <label>Generators out of service<br><select id="lf-out-gen" multiple size="5"></select></label>
+      </div>
+      <button id="btn-loadflow" class="primary">Run Load Flow</button>
+      <button id="btn-lf-clear">Clear outages</button>
+    </div>
+    <div id="lf-summary" class="summary"></div>
+    <div class="card"><h3>Bus voltages</h3><div id="lf-buses" class="table-wrap"></div></div>
+    <div class="card"><h3>Line flows</h3><div id="lf-lines" class="table-wrap"></div></div>
+    <div class="card"><h3>Transformer flows</h3><div id="lf-trafos" class="table-wrap"></div></div>
+    <div class="card"><h3>Generators</h3><div id="lf-gens" class="table-wrap"></div></div>
+  </section>
+
+  <!-- Contingency -->
+  <section id="tab-contingency" class="panel">
+    <div class="card">
+      <h2>N-1 contingency analysis</h2>
+      <p class="hint">Simulates the outage of every line, transformer and generator one at a time
+        (uses <code>contingency.ContingencyAnalysis</code>). IEEE 39-bus takes a few seconds.</p>
+      <button id="btn-contingency" class="primary">Run N-1 Analysis</button>
+      <label class="inline"><input type="checkbox" id="ca-only-critical"> show only High/Critical</label>
+    </div>
+    <div id="ca-summary" class="summary"></div>
+    <div class="card"><h3>Contingency results</h3><div id="ca-results" class="table-wrap"></div></div>
+    <div class="card"><h3>Detailed violations</h3><div id="ca-violations" class="table-wrap"></div></div>
+  </section>
+
+  <!-- State estimation -->
+  <section id="tab-se" class="panel">
+    <div class="card">
+      <h2>State estimation (WLS)</h2>
+      <div class="row wrap">
+        <label>Mode<br>
+          <select id="se-mode">
+            <option value="voltage_only">Voltage only (robust)</option>
+            <option value="comprehensive">Comprehensive (V + P/Q injections + flows)</option>
+          </select>
+        </label>
+        <label>Voltage noise (%)<br><input id="se-vnoise" type="number" value="2.5" step="0.1" min="0" max="50"></label>
+        <label>Power noise (%)<br><input id="se-pnoise" type="number" value="3" step="0.1" min="0" max="50"></label>
+        <label>Max iterations<br><input id="se-iter" type="number" value="20" min="1" max="200"></label>
+      </div>
+      <button id="btn-se" class="primary">Run State Estimation</button>
+    </div>
+    <div class="card">
+      <h3>Measurement outage scenario</h3>
+      <p class="hint">Select buses whose measurements fail, then compare baseline vs. outage estimation.</p>
+      <select id="se-outage-buses" multiple size="6"></select><br>
+      <button id="btn-outage">Simulate Measurement Outage</button>
+    </div>
+    <div id="se-summary" class="summary"></div>
+    <div class="card"><h3>Estimated vs. true state</h3><div id="se-table" class="table-wrap"></div></div>
+    <div class="card"><h3>Measurements</h3><div id="se-meas" class="table-wrap"></div></div>
+    <div class="card"><h3>Outage scenario result</h3><pre id="se-outage"></pre></div>
+  </section>
+</main>
+
+<footer>Grid Simulator web GUI – powered by pandapower &amp; Flask</footer>
+<script src="/static/app.js"></script>
+</body>
+</html>
